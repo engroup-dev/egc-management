@@ -68,8 +68,8 @@ GitHub builds the app for you. Pushing a version tag runs the workflow in `.gith
    ```
 2. **Tag and push the tag.** This starts the build:
    ```bash
-   git tag v1.1.16
-   git push origin v1.1.16
+   git tag v1.1.17
+   git push origin v1.1.17
    ```
 3. **Wait for the build** on GitHub → Actions ("Build and Publish (Windows + macOS)").
 4. **Publish the release.** The workflow creates a **draft**. Open GitHub → Releases, check the files, and press **Publish release**. Users can't see a draft.
