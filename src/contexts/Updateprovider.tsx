@@ -149,11 +149,11 @@ function ForceUpdateOverlay() {
       window.electronAPI?.openExternal
     ) {
       window.electronAPI.openExternal(
-        "https://github.com/NoraldenElhouni/egc-management/releases/latest",
+        "https://github.com/engroup-dev/egc-management/releases/latest",
       );
     } else {
       window.open(
-        "https://github.com/NoraldenElhouni/egc-management/releases/latest",
+        "https://github.com/engroup-dev/egc-management/releases/latest",
         "_blank",
       );
     }
