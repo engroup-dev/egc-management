@@ -1,4 +1,4 @@
--- Project drawings: READ-ONLY checks to run AFTER the migration and the
+-- Project drawings: READ-ONLY checks to run AFTER both migrations and the
 -- Vault secret. Changes nothing. Every row must say ok = true.
 with checks(check_name, ok, detail) as (
   values
@@ -7,10 +7,10 @@ with checks(check_name, ok, detail) as (
     where n.nspname = 'drawings' and c.relkind = 'r' and c.relrowsecurity
       and c.relname in ('folders', 'versions', 'notices', 'access')),
    'drawings.{folders,versions,notices,access}'),
-  ('13 functions exist',
-   (select count(*) = 13 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  ('15 functions exist',
+   (select count(*) = 15 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'drawings'),
-   'helpers + RPCs in schema drawings'),
+   'helpers + RPCs in schema drawings, incl. the 2 file-name helpers'),
   ('5 policies exist',
    (select count(*) = 5 from pg_policies
     where schemaname = 'drawings'),
@@ -33,6 +33,21 @@ with checks(check_name, ok, detail) as (
   ('no leftover public.project_drawing_* tables',
    to_regclass('public.project_drawing_folders') is null,
    'the early dev-only layout must be gone'),
+  ('file naming applied',
+   exists (select 1 from information_schema.columns
+           where table_schema = 'drawings' and table_name = 'versions'
+             and column_name = 'original_file_name'),
+   'migration 20261025120000_drawings_file_naming.sql'),
+  ('standard file name rule',
+   drawings.standard_file_name('Project 627H6I', 'خرائط معمارية', 3, 'pdf') = 'Project_627H6I-خرائط_معمارية-v3.pdf'
+   and drawings.standard_file_name('a/b:c', 'A - B', 1, 'DWG') = 'abc-A_B-v1.dwg'
+   and drawings.standard_file_name('???', '', 2, null) = 'project-section-v2.bin',
+   '<project>-<map type>-v<version>.<ext>'),
+  ('every version has a standard name',
+   not exists (select 1 from drawings.versions v
+               where v.original_file_name is null
+                  or v.file_name !~ ('-v' || v.version || '\.[a-z0-9]{1,10}$')),
+   'a false here means the naming migration did not run after the first one'),
   ('files_service_secret exists in Vault',
    exists (select 1 from vault.secrets where name = 'files_service_secret'),
    'without it every upload/download/delete is refused')

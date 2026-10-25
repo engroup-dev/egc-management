@@ -3,10 +3,12 @@ import { Upload } from "lucide-react";
 import Dialog from "../../ui/Dialog";
 import Button from "../../ui/Button";
 import {
+  useDrawingProjectName,
   useUploadDrawingVersion,
   type DrawingFolderRow,
 } from "../../../hooks/operations/drawings/useProjectDrawings";
 import { formatFileSize, MAX_FILE_MB } from "./drawingLabels";
+import { standardDrawingFileName } from "./drawingFileName";
 
 interface Props {
   projectId: string;
@@ -20,6 +22,7 @@ interface Props {
 
 const UploadVersionDialog = ({ projectId, folder, otherFolders, isOpen, onClose, onUploaded }: Props) => {
   const upload = useUploadDrawingVersion(projectId);
+  const projectName = useDrawingProjectName(projectId, isOpen);
   const [file, setFile] = useState<File | null>(null);
   const [notify, setNotify] = useState<string[]>([]);
   const [progress, setProgress] = useState(0);
@@ -78,8 +81,17 @@ const UploadVersionDialog = ({ projectId, folder, otherFolders, isOpen, onClose,
           <Upload size={22} className="text-primary" />
           {file ? (
             <span className="text-sm">
-              <b>{file.name}</b>{" "}
-              <span className="text-gray-500" dir="ltr">({formatFileSize(file.size)})</span>
+              {projectName.data !== undefined && (
+                <span className="block">
+                  سيُحفظ باسم:{" "}
+                  <b dir="ltr">
+                    {standardDrawingFileName(projectName.data, folder.name, folder.next_version, file.name)}
+                  </b>
+                </span>
+              )}
+              <span className="block text-gray-500">
+                {file.name} <span dir="ltr">({formatFileSize(file.size)})</span>
+              </span>
             </span>
           ) : (
             <span className="text-sm text-gray-600">

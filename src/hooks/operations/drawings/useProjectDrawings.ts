@@ -67,6 +67,7 @@ export const drawingKeys = {
   notices: (projectId: string) => ["project-drawings", projectId, "notices"],
   versions: (projectId: string, folderId: string) => ["project-drawings", projectId, "versions", folderId],
   access: (projectId: string, folderId: string) => ["project-drawings", projectId, "access", folderId],
+  projectName: (projectId: string) => ["project-drawings", projectId, "project-name"],
   mapTypes: ["project-drawings", "map-types"],
 };
 
@@ -214,6 +215,24 @@ export function useFolderAccess(projectId: string | undefined, folderId: string 
         .eq("folder_id", folderId as string);
       if (error) throw toError(error, "تعذر تحميل صلاحيات الوصول");
       return data ?? [];
+    },
+  });
+}
+
+/** The project's name, for previewing standard file names before upload. */
+export function useDrawingProjectName(projectId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: drawingKeys.projectName(projectId ?? ""),
+    enabled: enabled && !!projectId,
+    staleTime: 5 * 60_000,
+    queryFn: async (): Promise<string> => {
+      const { data, error } = await supabase
+        .from("projects")
+        .select("name")
+        .eq("id", projectId as string)
+        .maybeSingle();
+      if (error) throw toError(error, "تعذر تحميل اسم المشروع");
+      return data?.name ?? "";
     },
   });
 }

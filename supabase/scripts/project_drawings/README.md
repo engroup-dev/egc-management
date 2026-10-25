@@ -2,17 +2,26 @@
 
 The feature needs three things in this order:
 
-1. The DB migration.
+1. The DB migrations (two files, in order).
 2. The Vault secret.
 3. The files service on the EGC server.
 
 After those, release the app version that contains the feature.
 
-**The migration only adds:**
+**The migrations only add:**
 - a new schema, `drawings`, the same way `boq`, `contracts` and `tasks` each have their own
 - 4 tables in it: `drawings.folders`, `drawings.versions`, `drawings.notices`, `drawings.access`
-- 13 functions in it (`drawings.my_caps`, `drawings.add_version`, …)
+- 15 functions in it (`drawings.my_caps`, `drawings.add_version`, …)
 - their RLS policies
+- (second file) standard file names, see below
+
+**Standard file names.** Users upload any file; the system names it
+`<project name>-<map type name>-v<version>.<ext>`, e.g. `Project_627H6I-خرائط_معمارية-v3.pdf`.
+- The name is made in `drawings.add_version` when the version number is handed out, so it is always right and can't be bypassed.
+- Each part is cleaned: characters Windows/macOS forbid are dropped, `-` becomes `_`, spaces become `_`, at most 80 characters, so `-` only ever separates the parts.
+- The uploader's own name is kept in `drawings.versions.original_file_name` and shown under the standard name in the app.
+- Names are stamped at upload. Renaming a project or a map type later doesn't rename old versions.
+- Files on the server keep their `<uuid>.<ext>` paths; only the name people see and download under is standard.
 
 **It deletes, drops or rewrites nothing that already exists.** The single change to existing data is switching on the `manage_project_maps` row in `permission_catalog` (`is_active = true`). It runs as one transaction, so it either applies fully or not at all. It is idempotent, so running it twice is harmless.
 
@@ -22,7 +31,8 @@ After those, release the app version that contains the feature.
 
 | File | What it does | Changes data? |
 |---|---|---|
-| `supabase/migrations/20261020120000_project_drawings.sql` | the migration | adds only |
+| `supabase/migrations/20261020120000_project_drawings.sql` | the feature | adds only |
+| `supabase/migrations/20261025120000_drawings_file_naming.sql` | standard file names; run **after** the first | adds a column; renames existing drawing versions (none on a first rollout) |
 | `01_preflight.sql` | checks the DB has everything the migration needs | no (read-only) |
 | `02_verify.sql` | checks the result | no (read-only) |
 | `03_rollback.sql` | removes the feature's objects again | deletes drawings data only |
@@ -51,9 +61,13 @@ Run `01_preflight.sql`.
 - The `info:` rows tell you whether it already ran and whether the secret exists.
 - If any check is `false`, **stop**: production differs from what the migration expects.
 
-### 2. Migration
+### 2. Migrations
 
-Run `supabase/migrations/20261020120000_project_drawings.sql`. It should finish with "Success. No rows returned".
+Run these two files, **in this order**, each as its own paste. Each should finish with "Success. No rows returned".
+1. `supabase/migrations/20261020120000_project_drawings.sql`
+2. `supabase/migrations/20261025120000_drawings_file_naming.sql`
+
+Both are idempotent. If you ever re-run the first one, re-run the second one after it: the first one on its own puts back the old `add_version`, which doesn't make standard names. (`02_verify.sql` catches this: "every version has a standard name" turns false after the next upload.)
 
 ### 3. Expose the schema (once per environment)
 
@@ -100,7 +114,7 @@ In the app (Settings › Permissions), grant `manage_project_maps` to whoever sh
 
 ## Rolling back
 
-Take a backup first, then run `03_rollback.sql`.
+Take a backup first, then run `03_rollback.sql`. To undo only the standard file names and keep the feature, follow the comment at the top of that file instead.
 - It drops only the `drawings` schema with its tables and functions, and switches `manage_project_maps` back off. It refuses to drop the schema if anything else was put in it.
 - Afterwards, remove `drawings` from the exposed schemas (step 3).
 - It deletes the drawings records. The files on the EGC server stay until you remove them yourself.
@@ -113,4 +127,5 @@ Take a backup first, then run `03_rollback.sql`.
 - The post-check passes.
 - The rollback was dry-run inside a rolled-back transaction: it removed exactly the new objects and left the rest in place.
 - The `drawings` schema layout (2026-10-24): applied on dev, and the rows from the early `public.project_drawing_*` layout were copied over and the old objects dropped (a dev-only step; prod never had the old layout). Every test user sees the same folders and rights as before.
+- Standard file names (2026-10-25): applied and re-applied on dev; the 8 existing versions were renamed and keep their original names. An upload done as an authenticated test user (rolled back) got `…-v4.pdf`, and the download returned the same name. The SQL rule and the app's preview copy gave identical output on 22 tricky names (Arabic, hyphens, slashes, tabs, non-breaking spaces, emoji, 120 characters, empty).
 - **Still open on dev:** adding `drawings` to the exposed schemas needs the `data_api_config_write` permission, which the current account doesn't have.

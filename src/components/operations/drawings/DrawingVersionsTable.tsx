@@ -53,7 +53,12 @@ const DrawingVersionsTable = ({
             return (
               <tr key={v.id}>
                 <td className="px-4 py-3">
-                  <span className="block font-medium text-gray-900">{v.file_name}</span>
+                  <span className="block text-right font-medium text-gray-900" dir="ltr">
+                    {v.file_name}
+                  </span>
+                  {v.original_file_name && v.original_file_name !== v.file_name && (
+                    <span className="block text-xs text-gray-400">الاسم الأصلي: {v.original_file_name}</span>
+                  )}
                   <span className="block text-xs text-gray-400">
                     <span dir="ltr">{formatFileSize(v.file_size)}</span>
                     {v.uploaderName ? ` · ${v.uploaderName}` : ""}

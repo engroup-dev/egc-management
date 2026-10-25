@@ -51,6 +51,13 @@ select 'info: migration already applied?',
        case when to_regclass('drawings.folders') is null
             then 'no - first run' else 'yes - re-running is safe (idempotent)' end
 union all
+select 'info: file naming migration already applied?',
+       true,
+       case when exists (select 1 from information_schema.columns
+                         where table_schema = 'drawings' and table_name = 'versions'
+                           and column_name = 'original_file_name')
+            then 'yes - re-running is safe (idempotent)' else 'no' end
+union all
 select 'info: old public.project_drawing_* tables',
        true,
        case when to_regclass('public.project_drawing_folders') is null

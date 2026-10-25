@@ -4,6 +4,16 @@
 -- !! the EGC server are NOT deleted; remove them separately if wanted.
 -- Take a backup first. Also remove `drawings` from Project Settings >
 -- Data API > Exposed schemas afterwards.
+--
+-- To undo ONLY the standard file names (keep the feature), do not run
+-- this file; instead run, in one transaction:
+--   update drawings.versions set file_name = original_file_name
+--     where original_file_name is not null;
+--   alter table drawings.versions drop column original_file_name;
+--   drop function drawings.standard_file_name(text, text, integer, text);
+--   drop function drawings.file_name_part(text, text);
+-- and then re-run 20261020120000_project_drawings.sql (it restores the
+-- old add_version; it is idempotent).
 begin;
 
 drop function if exists drawings.delete_folder(uuid);
@@ -20,6 +30,8 @@ drop table if exists drawings.notices;
 drop table if exists drawings.versions;
 drop table if exists drawings.folders;
 
+drop function if exists drawings.standard_file_name(text, text, integer, text);
+drop function if exists drawings.file_name_part(text, text);
 drop function if exists drawings.assert_files_service();
 drop function if exists drawings.is_participant(uuid);
 drop function if exists drawings.can(uuid, text);

@@ -744,6 +744,7 @@ export type Database = {
           folder_id: string
           id: string
           mime_type: string | null
+          original_file_name: string | null
           uploaded_by: string | null
           version: number
         }
@@ -755,6 +756,7 @@ export type Database = {
           folder_id: string
           id?: string
           mime_type?: string | null
+          original_file_name?: string | null
           uploaded_by?: string | null
           version: number
         }
@@ -766,6 +768,7 @@ export type Database = {
           folder_id?: string
           id?: string
           mime_type?: string | null
+          original_file_name?: string | null
           uploaded_by?: string | null
           version?: number
         }
@@ -811,6 +814,10 @@ export type Database = {
           mime_type: string
         }[]
       }
+      file_name_part: {
+        Args: { p: string; p_fallback: string }
+        Returns: string
+      }
       is_manager: { Args: { p_project_id: string }; Returns: boolean }
       is_participant: { Args: { p_project_id: string }; Returns: boolean }
       mark_complied: { Args: { p_notice_id: string }; Returns: undefined }
@@ -823,6 +830,15 @@ export type Database = {
       set_status: {
         Args: { p_folder_id: string; p_note?: string; p_status: string }
         Returns: undefined
+      }
+      standard_file_name: {
+        Args: {
+          p_ext: string
+          p_project: string
+          p_section: string
+          p_version: number
+        }
+        Returns: string
       }
     }
     Enums: {
