@@ -595,6 +595,259 @@ export type Database = {
       [_ in never]: never
     }
   }
+  drawings: {
+    Tables: {
+      access: {
+        Row: {
+          can_download: boolean
+          can_edit: boolean
+          can_upload: boolean
+          folder_id: string
+          granted_by: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          can_download?: boolean
+          can_edit?: boolean
+          can_upload?: boolean
+          folder_id: string
+          granted_by?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          can_download?: boolean
+          can_edit?: boolean
+          can_upload?: boolean
+          folder_id?: string
+          granted_by?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "access_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      folders: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          map_type_id: string
+          next_version: number
+          project_id: string
+          status: string
+          status_at: string | null
+          status_by: string | null
+          status_note: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          map_type_id: string
+          next_version?: number
+          project_id: string
+          status?: string
+          status_at?: string | null
+          status_by?: string | null
+          status_note?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          map_type_id?: string
+          next_version?: number
+          project_id?: string
+          status?: string
+          status_at?: string | null
+          status_by?: string | null
+          status_note?: string | null
+        }
+        Relationships: []
+      }
+      notices: {
+        Row: {
+          created_at: string
+          from_folder_id: string
+          id: string
+          project_id: string
+          resolved_at: string | null
+          resolved_by: string | null
+          state: string
+          to_folder_id: string
+          version_id: string
+          version_number: number
+        }
+        Insert: {
+          created_at?: string
+          from_folder_id: string
+          id?: string
+          project_id: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          state?: string
+          to_folder_id: string
+          version_id: string
+          version_number: number
+        }
+        Update: {
+          created_at?: string
+          from_folder_id?: string
+          id?: string
+          project_id?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          state?: string
+          to_folder_id?: string
+          version_id?: string
+          version_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notices_from_folder_id_fkey"
+            columns: ["from_folder_id"]
+            isOneToOne: false
+            referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notices_to_folder_id_fkey"
+            columns: ["to_folder_id"]
+            isOneToOne: false
+            referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notices_version_id_fkey"
+            columns: ["version_id"]
+            isOneToOne: false
+            referencedRelation: "versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      versions: {
+        Row: {
+          created_at: string
+          file_name: string
+          file_path: string
+          file_size: number | null
+          folder_id: string
+          id: string
+          mime_type: string | null
+          original_file_name: string | null
+          uploaded_by: string | null
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          file_name: string
+          file_path: string
+          file_size?: number | null
+          folder_id: string
+          id?: string
+          mime_type?: string | null
+          original_file_name?: string | null
+          uploaded_by?: string | null
+          version: number
+        }
+        Update: {
+          created_at?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number | null
+          folder_id?: string
+          id?: string
+          mime_type?: string | null
+          original_file_name?: string | null
+          uploaded_by?: string | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "versions_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      add_version: {
+        Args: {
+          p_file_name: string
+          p_file_path: string
+          p_file_size: number
+          p_folder_id: string
+          p_mime_type: string
+          p_notify_folder_ids?: string[]
+        }
+        Returns: {
+          id: string
+          version: number
+        }[]
+      }
+      assert_files_service: { Args: never; Returns: undefined }
+      can: { Args: { p_cap: string; p_folder_id: string }; Returns: boolean }
+      delete_folder: { Args: { p_folder_id: string }; Returns: string[] }
+      delete_version: { Args: { p_version_id: string }; Returns: string }
+      file_for_download: {
+        Args: { p_version_id: string }
+        Returns: {
+          file_name: string
+          file_path: string
+          file_size: number
+          mime_type: string
+        }[]
+      }
+      file_name_part: {
+        Args: { p: string; p_fallback: string }
+        Returns: string
+      }
+      is_manager: { Args: { p_project_id: string }; Returns: boolean }
+      is_participant: { Args: { p_project_id: string }; Returns: boolean }
+      mark_complied: { Args: { p_notice_id: string }; Returns: undefined }
+      my_caps: { Args: { p_project_id: string }; Returns: Json }
+      on_team: { Args: { p_project_id: string }; Returns: boolean }
+      set_access: {
+        Args: { p_entries: Json; p_folder_id: string }
+        Returns: undefined
+      }
+      set_status: {
+        Args: { p_folder_id: string; p_note?: string; p_status: string }
+        Returns: undefined
+      }
+      standard_file_name: {
+        Args: {
+          p_ext: string
+          p_project: string
+          p_section: string
+          p_version: number
+        }
+        Returns: string
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   graphql_public: {
     Tables: {
       [_ in never]: never
@@ -7097,6 +7350,9 @@ export const Constants = {
       payment_status: ["pending", "approved", "rejected", "paid"],
       round_status: ["draft", "pricing", "awarded", "cancelled"],
     },
+  },
+  drawings: {
+    Enums: {},
   },
   graphql_public: {
     Enums: {},

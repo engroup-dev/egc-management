@@ -14,7 +14,7 @@
     "make": "electron-forge make",
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
-    "types": "supabase gen types typescript --linked --schema public,boq,app,contracts,website,lookups,tasks,hr,graphql_public > src/lib/supabase.ts"
+    "types": "supabase gen types typescript --linked --schema public,boq,app,contracts,drawings,website,lookups,tasks,hr,graphql_public > src/lib/supabase.ts"
   },
   "keywords": [],
   "author": {

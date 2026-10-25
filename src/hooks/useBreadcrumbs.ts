@@ -13,7 +13,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // Segments that only exist as a prefix for the id after them (there is no
 // `/tasks/board` page) — folded into that id's crumb instead of rendered as
 // a dead link of their own.
-const PREFIX_ONLY = new Set(["board", "space", "task", "department", "project", "expense", "employee"]);
+const PREFIX_ONLY = new Set(["board", "space", "task", "department", "project", "expense", "employee", "folder"]);
 
 // Simple human-friendly labels for common route segments
 export const SEGMENT_NAMES: Record<string, string> = {
