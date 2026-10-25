@@ -46,7 +46,7 @@ const config: ForgeConfig = {
   publishers: [
     new PublisherGithub({
       repository: {
-        owner: "NoraldenElhouni",
+        owner: "engroup-dev",
         name: "egc-management",
       },
       draft: true,
