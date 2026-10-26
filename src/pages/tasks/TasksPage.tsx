@@ -1,6 +1,6 @@
 import { useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { Link, Navigate } from "react-router-dom";
-import { Users, UserCog, Shapes, Building2, FolderKanban, Building, User, Search, X, Layers, Plus, Settings } from "lucide-react";
+import { Users, UserCog, Shapes, Building2, FolderKanban, Building, User, Search, X, Layers, Plus, Settings, LayoutGrid, List } from "lucide-react";
 import { useTasksSidebar, type BoardWithCount, type SpaceNode, type SpaceType } from "../../hooks/tasks/useTasksSidebar";
 import { matchSpaceNode } from "../../hooks/tasks/tasksSidebarSearch";
 import { useMyTaskAccess, useSpaceCaps } from "../../hooks/tasks/useTaskAccess";
@@ -24,6 +24,31 @@ import { SpaceCardsPageSkeleton } from "../../components/tasks/TasksSkeletons";
 // at its estimated due date while it has no dated tasks. Its card shows both
 // dates, flagged when the tasks run past the estimate; a project opens its
 // space.
+//
+// The spaces (and search results) show as cards or as a compact list; the
+// toggle beside the search box switches between them and the choice is
+// remembered per viewer in localStorage.
+
+type SpacesLayout = "cards" | "list";
+const LAYOUT_STORAGE_KEY = "tasks.spacesLayout";
+
+// Every access wrapped, since storage can be unreadable (private window,
+// blocked site data) — same posture as TaskGantt's readStored/writeStored.
+function loadLayout(): SpacesLayout {
+  try {
+    return localStorage.getItem(LAYOUT_STORAGE_KEY) === "list" ? "list" : "cards";
+  } catch {
+    return "cards";
+  }
+}
+
+function saveLayout(layout: SpacesLayout) {
+  try {
+    localStorage.setItem(LAYOUT_STORAGE_KEY, layout);
+  } catch {
+    // storage unavailable — the choice just won't be remembered
+  }
+}
 
 const SPACE_TYPE_LABELS: Record<SpaceType, string> = {
   project: "مساحات المشاريع",
@@ -78,7 +103,50 @@ function CountBadge({ count }: { count: number }) {
   );
 }
 
-function SpaceCard({ node, matchedBoards }: { node: SpaceNode; matchedBoards?: BoardWithCount[] }) {
+function LayoutToggle({ value, onChange }: { value: SpacesLayout; onChange: (layout: SpacesLayout) => void }) {
+  const options: { layout: SpacesLayout; icon: typeof LayoutGrid; label: string }[] = [
+    { layout: "cards", icon: LayoutGrid, label: "عرض كبطاقات" },
+    { layout: "list", icon: List, label: "عرض كقائمة" },
+  ];
+  return (
+    <div className="flex shrink-0 items-center rounded-lg border border-gray-200 bg-white p-0.5" role="group" aria-label="طريقة عرض المساحات">
+      {options.map(({ layout, icon: Icon, label }) => (
+        <button
+          key={layout}
+          onClick={() => onChange(layout)}
+          aria-pressed={value === layout}
+          title={label}
+          aria-label={label}
+          className={`rounded-md p-1.5 transition-colors ${
+            value === layout ? "bg-primary-superLight text-primary" : "text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+          }`}
+        >
+          <Icon className="h-4 w-4" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// The container a group of spaces sits in: a grid of cards, or one bordered
+// list with a divider between rows.
+function SpaceGroupItems({ layout, children }: { layout: SpacesLayout; children: ReactNode }) {
+  return layout === "list" ? (
+    <div className="divide-y divide-gray-100 overflow-hidden rounded-lg border border-gray-100 bg-white">{children}</div>
+  ) : (
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">{children}</div>
+  );
+}
+
+function SpaceCard({
+  node,
+  matchedBoards,
+  layout,
+}: {
+  node: SpaceNode;
+  matchedBoards?: BoardWithCount[];
+  layout: SpacesLayout;
+}) {
   const Icon = SPACE_TYPE_ICONS[node.space.space_type];
   const boardCount = node.boards.length + node.folders.reduce((n, f) => n + f.boards.length, 0);
   const openCount =
@@ -91,36 +159,58 @@ function SpaceCard({ node, matchedBoards }: { node: SpaceNode; matchedBoards?: B
   const caps = useSpaceCaps(node.space.id);
   const [showNewBoard, setShowNewBoard] = useState(false);
   const hasActions = caps.create || caps.manage;
+  const isList = layout === "list";
+
+  const iconBadge = (
+    <span
+      className={`flex shrink-0 items-center justify-center rounded-lg bg-primary-superLight text-primary ${isList ? "h-8 w-8" : "h-9 w-9"}`}
+      style={node.space.color ? { backgroundColor: `${node.space.color}1A`, color: node.space.color } : undefined}
+    >
+      <Icon className={isList ? "h-4 w-4" : "h-4.5 w-4.5"} />
+    </span>
+  );
+  const title = (
+    <div className="min-w-0 flex-1">
+      <div className="truncate font-medium text-gray-800">{node.space.name}</div>
+      {showProject && <div className="truncate text-xs text-gray-400">المشروع: {node.projectName}</div>}
+    </div>
+  );
+  const boardsLabel = boardCount > 0 ? `${boardCount} لوحة` : "لا توجد لوحات بعد";
 
   return (
     <div>
       <div className="relative">
-      <Link
-        to={`/tasks/space/${node.space.id}`}
-        className="block rounded-lg border border-gray-100 p-3 transition-colors hover:border-primary/30 hover:bg-primary-superLight/40"
-      >
-        <div className={`flex items-center gap-2 ${hasActions ? "pl-16" : ""}`}>
-          <span
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-superLight text-primary"
-            style={node.space.color ? { backgroundColor: `${node.space.color}1A`, color: node.space.color } : undefined}
-          >
-            <Icon className="h-4.5 w-4.5" />
+      {isList ? (
+        // Fixed-width count columns so the rows line up down the list.
+        <Link
+          to={`/tasks/space/${node.space.id}`}
+          className={`flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-primary-superLight/40 ${hasActions ? "pl-20" : ""}`}
+        >
+          {iconBadge}
+          {title}
+          <span className="w-28 shrink-0 text-xs text-gray-400">{boardsLabel}</span>
+          <span className="flex w-20 shrink-0 justify-end">
+            <CountBadge count={openCount} />
           </span>
-          <div className="min-w-0 flex-1">
-            <div className="truncate font-medium text-gray-800">{node.space.name}</div>
-            {showProject && <div className="truncate text-xs text-gray-400">المشروع: {node.projectName}</div>}
+        </Link>
+      ) : (
+        <Link
+          to={`/tasks/space/${node.space.id}`}
+          className="block rounded-lg border border-gray-100 p-3 transition-colors hover:border-primary/30 hover:bg-primary-superLight/40"
+        >
+          <div className={`flex items-center gap-2 ${hasActions ? "pl-16" : ""}`}>
+            {iconBadge}
+            {title}
           </div>
-        </div>
-        <div className="mt-2 flex items-center justify-between">
-          <span className="text-xs text-gray-400">
-            {boardCount > 0 ? `${boardCount} لوحة` : "لا توجد لوحات بعد"}
-          </span>
-          <CountBadge count={openCount} />
-        </div>
-      </Link>
+          <div className="mt-2 flex items-center justify-between">
+            <span className="text-xs text-gray-400">{boardsLabel}</span>
+            <CountBadge count={openCount} />
+          </div>
+        </Link>
+      )}
       {/* Siblings of the link, not children: a button can't live inside a link. */}
       {hasActions && (
-        <div className="absolute left-2 top-2 flex items-center gap-0.5">
+        <div className={`absolute left-2 flex items-center gap-0.5 ${isList ? "top-1/2 -translate-y-1/2" : "top-2"}`}>
           {caps.create && (
             <button
               onClick={() => setShowNewBoard(true)}
@@ -147,7 +237,7 @@ function SpaceCard({ node, matchedBoards }: { node: SpaceNode; matchedBoards?: B
       {showNewBoard && <NewBoardModal spaceId={node.space.id} onClose={() => setShowNewBoard(false)} />}
       {/* Siblings of the card link, not children: a link can't nest a link. */}
       {!!matchedBoards?.length && (
-        <div className="mr-4 mt-1 space-y-0.5 border-r border-gray-100 pr-2">
+        <div className={`mr-4 mt-1 space-y-0.5 border-r border-gray-100 pr-2 ${isList ? "mb-2" : ""}`}>
           {matchedBoards.map((b) => (
             <Link
               key={b.board.id}
@@ -173,6 +263,11 @@ export default function TasksPage() {
   const { access } = useMyTaskAccess();
   const [search, setSearch] = useState("");
   const searching = search.trim().length > 0;
+  const [layout, setLayout] = useState<SpacesLayout>(loadLayout);
+  const changeLayout = (next: SpacesLayout) => {
+    setLayout(next);
+    saveLayout(next);
+  };
 
   // Someone who can see no space at all (only tasks assigned to them) lands
   // on their own work instead of an empty hub.
@@ -213,21 +308,24 @@ export default function TasksPage() {
     <div className="h-full overflow-y-auto p-6" dir="rtl">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-lg font-semibold text-gray-900">إدارة المهام</h1>
-        <div className="flex w-full max-w-sm items-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5">
-          <Search className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="ابحث بالمشروع أو المساحة أو اللوحة..."
-            className="w-full bg-transparent text-sm outline-none"
-            aria-label="بحث بالمشروع أو المساحة أو اللوحة"
-          />
-          {searching && (
-            <button onClick={() => setSearch("")} className="shrink-0 rounded-full p-0.5 text-gray-400 hover:bg-gray-100" title="مسح البحث">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
+        <div className="flex w-full max-w-md items-center gap-2">
+          <LayoutToggle value={layout} onChange={changeLayout} />
+          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5">
+            <Search className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="ابحث بالمشروع أو المساحة أو اللوحة..."
+              className="w-full bg-transparent text-sm outline-none"
+              aria-label="بحث بالمشروع أو المساحة أو اللوحة"
+            />
+            {searching && (
+              <button onClick={() => setSearch("")} className="shrink-0 rounded-full p-0.5 text-gray-400 hover:bg-gray-100" title="مسح البحث">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -240,11 +338,11 @@ export default function TasksPage() {
         searchGroups.map((group) => (
           <div key={group.type} className="mb-5">
             <div className="mb-2 text-xs font-semibold text-gray-500">{SPACE_TYPE_LABELS[group.type]}</div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
+            <SpaceGroupItems layout={layout}>
               {group.results.map(({ node, boards }) => (
-                <SpaceCard key={node.space.id} node={node} matchedBoards={boards} />
+                <SpaceCard key={node.space.id} node={node} matchedBoards={boards} layout={layout} />
               ))}
-            </div>
+            </SpaceGroupItems>
           </div>
         ))}
 
@@ -294,11 +392,11 @@ export default function TasksPage() {
         spaceGroups.map((group) => (
           <div key={group.type} className="mb-5">
             <div className="mb-2 text-xs font-semibold text-gray-500">{SPACE_TYPE_LABELS[group.type]}</div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
+            <SpaceGroupItems layout={layout}>
               {group.nodes.map((node) => (
-                <SpaceCard key={node.space.id} node={node} />
+                <SpaceCard key={node.space.id} node={node} layout={layout} />
               ))}
-            </div>
+            </SpaceGroupItems>
           </div>
         ))}
     </div>
