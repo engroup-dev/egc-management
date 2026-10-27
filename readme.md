@@ -59,7 +59,9 @@ npm run types      # regenerate src/lib/supabase.ts from the live database (afte
 
 ## 3. Releasing a new version (updating the app)
 
-GitHub builds the app for you. Pushing a version tag runs the workflow in `.github/workflows/build.yml`. It builds the **Windows** and **macOS** installers and attaches them to a new GitHub release. No token or local build is needed.
+GitHub builds the app for you. Pushing a version tag runs the workflow in `.github/workflows/build.yml`. It builds the **Windows** and **macOS** installers, stores them on the EGC server for the website's download page (not live yet), and attaches them to a new draft GitHub release. No token or local build is needed.
+
+**People download the app from the website, [engroup.ly/download](https://engroup.ly/download), not from GitHub.** Windows copies also auto-update from the same server. See "Downloads on engroup.ly" below.
 
 1. **Change the version** in `package.json` (for example `1.1.9` → `1.1.10`), commit and push:
    ```bash
@@ -73,16 +75,75 @@ GitHub builds the app for you. Pushing a version tag runs the workflow in `.gith
    ```
 3. **Wait for the build** on GitHub → Actions ("Build and Publish (Windows + macOS)").
 4. **Publish the release.** The workflow creates a **draft**. Open GitHub → Releases, check the files, and press **Publish release**. Users can't see a draft.
+   - Publishing runs `.github/workflows/promote-desktop.yml`, which makes this version the one the website offers and the one Windows copies auto-update to. Check its run on GitHub → Actions ("Promote desktop release").
 5. **(Optional) Force everyone onto the new version.** Run this in the Supabase SQL editor:
 
    ```sql
    insert into public."update" (type, version, is_must) values ('desktop', '1.1.10', true);
    ```
 
-   - On start-up, anyone running an older version gets a blocking screen with a button to the latest GitHub release.
+   - On start-up, anyone running an older version gets a blocking screen with a button to the website's download page. (Up to 1.1.17 the button opened the latest GitHub release.)
    - The check runs before login. If it can't reach the database, it lets the user in rather than locking them out.
 
 **Keys used by the build:** the workflow reads `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` from the repo's **GitHub Secrets** (Settings → Secrets and variables → Actions). If the Supabase keys ever change, update them there before releasing.
+
+### Downloads on engroup.ly
+
+The installers are served by the EGC server's nginx from `/www/wwwroot/downloads/`, at `https://engroup.ly/downloads/`. The website's page `https://engroup.ly/download` (repo `engroup-dev/egc-website`) reads `desktop/latest.json` and links to the files.
+
+| Path under `/downloads/desktop/` | What it is |
+| --- | --- |
+| `<version>/` | One stored release: `EGC-Setup-<v>.exe`, `EGC-<v>-arm64.dmg`, the Squirrel `…-full.nupkg` and `RELEASES`. The last 4 are kept, plus the live one. |
+| `latest.json` | The live version, its files, sizes and SHA-256. The website reads it. |
+| `win32/x64/` | The Windows auto-update feed: `RELEASES` and the live nupkg. The app reads it (`src/main.ts`). |
+
+Everything on the server is done by one script, `deploy/desktop-release/egc-desktop-release.sh`, installed as `/usr/local/bin/egc-desktop-release`:
+
+- `upload <version>` (from `build.yml`) stores a release without changing what's live.
+- `promote <version>` (from `promote-desktop.yml`) makes a stored release live.
+- `status` lists the live and stored versions.
+
+**Roll back:** GitHub → Actions → "Promote desktop release" → Run workflow, with the older version (it must still be stored; see `status`). The website switches back. Windows copies that already updated stay on the newer version; Squirrel never downgrades.
+
+**Transition from GitHub:** copies up to 1.1.17 still auto-update from GitHub releases (update.electronjs.org), so keep publishing the GitHub release until everyone is on 1.1.18 or later. After that the GitHub release step in `build.yml` can go, and the repo can be made private.
+
+**macOS:** the build is Apple Silicon only (M1 or newer) and isn't code-signed, so macOS doesn't auto-update. Mac users update from the website, prompted by the force-update screen. The download page explains how to open an unsigned app the first time.
+
+#### One-time server setup
+
+Run on the EGC server (`217.76.51.227`) as root, from a checkout of this repo. Do each step with approval.
+
+1. **Folder**, owned by the deploy user and readable by nginx:
+   ```bash
+   install -d -o deploy -g deploy -m 755 /www/wwwroot/downloads /www/wwwroot/downloads/desktop
+   ```
+2. **Script:**
+   ```bash
+   install -m 755 deploy/desktop-release/egc-desktop-release.sh /usr/local/bin/egc-desktop-release
+   ```
+3. **Deploy key.** Make a new key (on your own computer): `ssh-keygen -t ed25519 -N "" -C github-actions@egc-desktop-downloads -f egc-downloads`. Add the public key to `~deploy/.ssh/authorized_keys` on one line, restricted to the script (no sudo needed):
+   ```
+   command="/usr/local/bin/egc-desktop-release \"$SSH_ORIGINAL_COMMAND\"",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 <key> github-actions@egc-desktop-downloads
+   ```
+4. **nginx:** paste `deploy/desktop-release/nginx-downloads.conf` into the engroup.ly server block (`/www/server/panel/vhost/nginx/engroup.ly.conf`), above the include of aaPanel's proxy config. Then `nginx -t` and `/etc/init.d/nginx reload`. Check: `curl -sI https://engroup.ly/downloads/desktop/latest.json` gives 404 (not the website's page) until step 5.
+5. **Seed with the current release** (1.1.17), so the page works before the next one. On the server, as deploy:
+   ```bash
+   sudo -u deploy bash -c '
+     set -e; v=1.1.17; d=$(mktemp -d); cd "$d"
+     base=https://github.com/engroup-dev/egc-management/releases/download/v$v
+     curl -fL -o EGC-Setup-$v.exe       "$base/egc-management-$v.Setup.exe"
+     curl -fL -o EGC-$v-arm64.dmg       "$base/egc-management-$v-arm64.dmg"
+     curl -fL -o egc_management-$v-full.nupkg "$base/egc_management-$v-full.nupkg"
+     curl -fL -o RELEASES               "$base/RELEASES"
+     tar -czf - -- * | egc-desktop-release "upload $v"
+     egc-desktop-release "promote $v"
+     cd / && rm -rf "$d"'
+   ```
+   (If you build the tar on a Mac instead, prefix `tar` with `COPYFILE_DISABLE=1` so macOS doesn't add `._` files, which the script rejects.)
+6. **GitHub** (this repo → Settings → Secrets and variables → Actions):
+   - Secrets: `DOWNLOADS_SSH_PRIVATE_KEY` (the private key from step 3), `DOWNLOADS_SSH_KNOWN_HOSTS` (`ssh-keyscan 217.76.51.227`), `DOWNLOADS_SSH_USER` (`deploy`), `DOWNLOADS_SSH_HOST` (`217.76.51.227`).
+   - Variable: `DOWNLOADS_ENABLED` = `true`. Until it's set, both workflows skip the server.
+7. **Backups (optional):** `/www/wwwroot/downloads` can always be rebuilt from a tag, so it doesn't need backing up.
 
 ---
 

@@ -2,10 +2,20 @@ import { app, BrowserWindow, ipcMain, Notification, shell } from "electron";
 import path from "node:path";
 import os from "node:os";
 import started from "electron-squirrel-startup";
-import { updateElectronApp } from "update-electron-app";
+import { updateElectronApp, UpdateSourceType } from "update-electron-app";
 
-if (app.isPackaged) {
-  updateElectronApp();
+// Auto-update from the EGC server's Windows feed (filled by
+// deploy/desktop-release/egc-desktop-release.sh on promote), not GitHub.
+// Windows only: Squirrel.Mac only updates code-signed apps, and the macOS
+// build isn't signed, so Mac users update through the force-update
+// overlay's link to https://engroup.ly/download instead.
+if (app.isPackaged && process.platform === "win32") {
+  updateElectronApp({
+    updateSource: {
+      type: UpdateSourceType.StaticStorage,
+      baseUrl: "https://engroup.ly/downloads/desktop/win32/x64",
+    },
+  });
 }
 
 ipcMain.handle("get-app-version", () => app.getVersion());

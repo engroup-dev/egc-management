@@ -54,6 +54,42 @@ jobs:
       - name: List downloaded files
         run: find dist -type f
 
+      # The website's downloads (https://engroup.ly/download): store this
+      # build on the EGC server, not yet live. Publishing the draft release
+      # below runs promote-desktop.yml, which makes it live. Before the
+      # draft exists, so it can't be published ahead of the files.
+      # readme.md, "Releases and downloads".
+      - name: Upload to engroup.ly downloads (not live yet)
+        if: startsWith(github.ref, 'refs/tags/v') && vars.DOWNLOADS_ENABLED == 'true'
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DOWNLOADS_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DOWNLOADS_SSH_KNOWN_HOSTS }}
+          SSH_TARGET: ${{ secrets.DOWNLOADS_SSH_USER }}@${{ secrets.DOWNLOADS_SSH_HOST }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          pick() {
+            local found
+            found="$(find dist -type f -name "$1")"
+            [ "$(printf '%s\n' "$found" | grep -c .)" -eq 1 ] || { echo "expected one $1, found: $found" >&2; exit 1; }
+            printf '%s' "$found"
+          }
+          mkdir upload
+          cp "$(pick '*Setup.exe')" "upload/EGC-Setup-$VERSION.exe"
+          cp "$(pick '*.dmg')" "upload/EGC-$VERSION-arm64.dmg"
+          cp "$(pick "*-$VERSION-full.nupkg")" upload/
+          cp "$(pick RELEASES)" upload/RELEASES
+          ls -l upload
+
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/downloads_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/downloads_key ~/.ssh/known_hosts
+          # The key is restricted server-side to egc-desktop-release.
+          (cd upload && tar -czf - -- *) | ssh -i ~/.ssh/downloads_key -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes "$SSH_TARGET" "upload $VERSION"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
