@@ -1,5 +1,5 @@
--- Project drawings: READ-ONLY checks to run AFTER both migrations and the
--- Vault secret. Changes nothing. Every row must say ok = true.
+-- Project drawings: READ-ONLY checks to run AFTER all three migrations
+-- and the Vault secret. Changes nothing. Every row must say ok = true.
 with checks(check_name, ok, detail) as (
   values
   ('4 tables exist with RLS on',
@@ -7,10 +7,10 @@ with checks(check_name, ok, detail) as (
     where n.nspname = 'drawings' and c.relkind = 'r' and c.relrowsecurity
       and c.relname in ('folders', 'versions', 'notices', 'access')),
    'drawings.{folders,versions,notices,access}'),
-  ('15 functions exist',
-   (select count(*) = 15 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  ('18 functions exist',
+   (select count(*) = 18 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'drawings'),
-   'helpers + RPCs in schema drawings, incl. the 2 file-name helpers'),
+   'helpers + RPCs in schema drawings, incl. the 2 file-name helpers and the 3 default-folder functions'),
   ('5 policies exist',
    (select count(*) = 5 from pg_policies
     where schemaname = 'drawings'),
@@ -48,6 +48,20 @@ with checks(check_name, ok, detail) as (
                where v.original_file_name is null
                   or v.file_name !~ ('-v' || v.version || '\.[a-z0-9]{1,10}$')),
    'a false here means the naming migration did not run after the first one'),
+  ('9 default folders, positions 1-9',
+   (select count(*) = 9 and min(position) = 1 and max(position) = 9 from drawings.default_folders),
+   'migration 20261027120000_drawings_default_folders.sql'),
+  ('new projects get the default folders',
+   exists (select 1 from pg_trigger
+           where tgrelid = 'public.projects'::regclass and tgname = 'projects_seed_drawings' and not tgisinternal),
+   'trigger projects_seed_drawings on public.projects'),
+  ('every project was seeded once',
+   not exists (select 1 from public.projects p
+               where not exists (select 1 from drawings.seeded_projects s where s.project_id = p.id)),
+   'drawings.seeded_projects'),
+  ('every folder has a position',
+   not exists (select 1 from drawings.folders where position is null),
+   'drawings.folders.position orders the list'),
   ('files_service_secret exists in Vault',
    exists (select 1 from vault.secrets where name = 'files_service_secret'),
    'without it every upload/download/delete is refused')
