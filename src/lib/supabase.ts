@@ -635,6 +635,21 @@ export type Database = {
           },
         ]
       }
+      default_folders: {
+        Row: {
+          map_type_id: string
+          position: number
+        }
+        Insert: {
+          map_type_id: string
+          position: number
+        }
+        Update: {
+          map_type_id?: string
+          position?: number
+        }
+        Relationships: []
+      }
       folders: {
         Row: {
           created_at: string
@@ -642,6 +657,7 @@ export type Database = {
           id: string
           map_type_id: string
           next_version: number
+          position: number
           project_id: string
           status: string
           status_at: string | null
@@ -654,6 +670,7 @@ export type Database = {
           id?: string
           map_type_id: string
           next_version?: number
+          position?: number
           project_id: string
           status?: string
           status_at?: string | null
@@ -666,6 +683,7 @@ export type Database = {
           id?: string
           map_type_id?: string
           next_version?: number
+          position?: number
           project_id?: string
           status?: string
           status_at?: string | null
@@ -734,6 +752,21 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      seeded_projects: {
+        Row: {
+          project_id: string
+          seeded_at: string
+        }
+        Insert: {
+          project_id: string
+          seeded_at?: string
+        }
+        Update: {
+          project_id?: string
+          seeded_at?: string
+        }
+        Relationships: []
       }
       versions: {
         Row: {
@@ -823,6 +856,7 @@ export type Database = {
       mark_complied: { Args: { p_notice_id: string }; Returns: undefined }
       my_caps: { Args: { p_project_id: string }; Returns: Json }
       on_team: { Args: { p_project_id: string }; Returns: boolean }
+      seed_project_defaults: { Args: { p_project_id: string }; Returns: number }
       set_access: {
         Args: { p_entries: Json; p_folder_id: string }
         Returns: undefined

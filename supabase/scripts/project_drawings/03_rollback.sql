@@ -14,7 +14,32 @@
 --   drop function drawings.file_name_part(text, text);
 -- and then re-run 20261020120000_project_drawings.sql (it restores the
 -- old add_version; it is idempotent).
+--
+-- To undo ONLY the default folders (keep the feature), run in one
+-- transaction:
+--   drop trigger if exists projects_seed_drawings on public.projects;
+--   drop trigger if exists folders_set_position on drawings.folders;
+--   drop function drawings.on_project_created();
+--   drop function drawings.seed_project_defaults(uuid);
+--   drop function drawings.set_folder_position();
+--   drop table drawings.seeded_projects;
+--   drop table drawings.default_folders;
+--   alter table drawings.folders drop column position;
+-- Folders that were seeded stay; to remove the ones still empty, first
+-- (before dropping default_folders) run:
+--   delete from drawings.folders f using drawings.default_folders d
+--   where d.map_type_id = f.map_type_id and f.created_by is null and f.next_version = 1;
+-- The map types the migration created stay in public.map_types.
 begin;
+
+-- Default folders (20261027120000).
+drop trigger if exists projects_seed_drawings on public.projects;
+drop function if exists drawings.on_project_created();
+drop function if exists drawings.seed_project_defaults(uuid);
+drop trigger if exists folders_set_position on drawings.folders;
+drop function if exists drawings.set_folder_position();
+drop table if exists drawings.seeded_projects;
+drop table if exists drawings.default_folders;
 
 drop function if exists drawings.delete_folder(uuid);
 drop function if exists drawings.delete_version(uuid);

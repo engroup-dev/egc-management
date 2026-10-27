@@ -122,7 +122,8 @@ export function useMyDrawingCaps(projectId: string | undefined) {
 }
 
 /** Every folder of the project the user takes part in, with its latest
- * version (when the user may view that folder). Sorted by name. */
+ * version (when the user may view that folder). In `position` order: the
+ * default folders first, then the ones added later. */
 export function useDrawingFolders(projectId: string | undefined) {
   return useQuery({
     queryKey: drawingKeys.folders(projectId ?? ""),
@@ -162,7 +163,7 @@ export function useDrawingFolders(projectId: string | undefined) {
           statusByName: f.status_by ? people.get(f.status_by) ?? null : null,
           latest: latest.get(f.id) ?? null,
         }))
-        .sort((a, b) => a.name.localeCompare(b.name, "ar"));
+        .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name, "ar"));
     },
   });
 }
