@@ -142,19 +142,20 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
 
 // ─── Blocking Overlay ─────────────────────────────────────────────────────────
 
-// The website's download page, which always offers the live version
-// (deploy/desktop-release/ in this repo fills it).
-const DOWNLOAD_PAGE_URL = "https://engroup.ly/download";
-
 function ForceUpdateOverlay() {
   const handleUpdate = () => {
     if (
       typeof window !== "undefined" &&
       window.electronAPI?.openExternal
     ) {
-      window.electronAPI.openExternal(DOWNLOAD_PAGE_URL);
+      window.electronAPI.openExternal(
+        "https://github.com/engroup-dev/egc-management/releases/latest",
+      );
     } else {
-      window.open(DOWNLOAD_PAGE_URL, "_blank");
+      window.open(
+        "https://github.com/engroup-dev/egc-management/releases/latest",
+        "_blank",
+      );
     }
   };
 
