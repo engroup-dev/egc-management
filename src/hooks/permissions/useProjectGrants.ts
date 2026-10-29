@@ -125,6 +125,7 @@ export function useSaveProjectDefaults() {
       // A project default changes what every team member effectively
       // has, so their resolver answers are stale too.
       queryClient.invalidateQueries({ queryKey: ["effective-permissions"] });
+      queryClient.invalidateQueries({ queryKey: ["my-effective-permissions"] });
     },
   });
 }
@@ -254,6 +255,7 @@ export function useSaveTeamMemberGrants() {
         queryKey: projectAllTeamGrantsKey(variables.projectId),
       });
       queryClient.invalidateQueries({ queryKey: ["effective-permissions"] });
+      queryClient.invalidateQueries({ queryKey: ["my-effective-permissions"] });
     },
   });
 }
@@ -307,6 +309,7 @@ export function useDeleteOrphanedTeamGrants() {
       queryClient.invalidateQueries({
         queryKey: teamMemberGrantsKey(variables.projectId, variables.userId),
       });
+      queryClient.invalidateQueries({ queryKey: ["my-effective-permissions"] });
     },
   });
 }
