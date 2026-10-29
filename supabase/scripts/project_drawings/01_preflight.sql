@@ -41,7 +41,7 @@ with checks(check_name, ok, detail) as (
    to_regnamespace('drawings') is null
    or not exists (select 1 from pg_class c
                   where c.relnamespace = to_regnamespace('drawings') and c.relkind = 'r'
-                    and c.relname not in ('folders', 'versions', 'notices', 'access')),
+                    and c.relname not in ('folders', 'versions', 'notices', 'access', 'default_folders', 'seeded_projects')),
    'the migration creates schema drawings; it must not already hold unrelated tables')
 )
 select check_name, ok, detail from checks
@@ -57,6 +57,34 @@ select 'info: file naming migration already applied?',
                          where table_schema = 'drawings' and table_name = 'versions'
                            and column_name = 'original_file_name')
             then 'yes - re-running is safe (idempotent)' else 'no' end
+union all
+select 'info: default folders migration already applied?',
+       true,
+       case when to_regclass('drawings.default_folders') is null
+            then 'no' else 'yes - re-running is safe (idempotent; never re-adds removed folders)' end
+union all
+-- Preview of 20261027120000_drawings_default_folders.sql: which map type
+-- each default folder will use (same matching as the migration).
+select 'info: default folder ' || t.pos,
+       true,
+       coalesce(
+         (select 'uses existing map type: ' || m.name
+          from public.map_types m
+          join unnest(t.names) with ordinality as n(name, ord) on btrim(m.name) = n.name
+          order by n.ord, m.created_at
+          limit 1),
+         'will create map type: ' || t.create_name)
+from (values
+  (1, 'رفع مساحي',                   array['رفع مساحي']),
+  (2, 'خرائط معمارية',               array['خرائط معمارية', 'معمارية']),
+  (3, 'انشائية',                     array['تصميم انشائي', 'خرائط إنشائية', 'خرائط انشائية', 'إنشائية', 'انشائية']),
+  (4, 'تصميم داخلي',                 array['تصميم داخلي', 'خرائط تصميم داخلي']),
+  (5, 'منظومة تكييف',                array['تصميم التكيف', 'تصميم تكيف', 'تصميم تكييف', 'منظومة تكييف', 'خرائط تكييف']),
+  (6, 'منظومة الحريق',               array['خرائط منظومه الحريق', 'خرائط منظومة الحريق', 'منظومة الحريق', 'خرائط الحريق']),
+  (7, 'سباكة',                       array['تصميم السباكه', 'تصميم اعمال سباكة', 'تصميم أعمال السباكة', 'سباكة', 'خرائط سباكة']),
+  (8, 'كهرباء',                      array['خرائط كهربائية', 'خرائط كهرباء', 'كهرباء']),
+  (9, 'الحدائق و المنطقة الخارجية',  array['خرائط الحدائق و المنطقه الخارجيه', 'خرائط الحدائق و المنطقة الخارجية', 'الحدائق و المنطقة الخارجية', 'الحدائق والمنطقة الخارجية'])
+) as t(pos, create_name, names)
 union all
 select 'info: old public.project_drawing_* tables',
        true,

@@ -1,33 +1,48 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Search } from "lucide-react";
+import { Search, Check } from "lucide-react";
 
 type Option = { value: string; label: string };
 
-interface SearchableSelectFieldProps {
+type BaseProps = {
   id: string;
   label?: string;
   placeholder?: string;
   error?: { message?: string };
   options: Option[];
   loading?: boolean;
-  value?: string;
-  onChange?: (value: string) => void;
   disabled?: boolean;
   hideLabel?: boolean;
-}
+};
 
-export const SearchableSelectField: React.FC<SearchableSelectFieldProps> = ({
-  id,
-  label,
-  placeholder = "-- اختر --",
-  error,
-  options,
-  loading,
-  value,
-  onChange,
-  disabled = false,
-  hideLabel = false,
-}) => {
+type SingleProps = BaseProps & {
+  multiple?: false;
+  value?: string;
+  onChange?: (value: string) => void;
+};
+
+type MultiProps = BaseProps & {
+  multiple: true;
+  values: string[];
+  onChange?: (values: string[]) => void;
+};
+
+type SearchableSelectFieldProps = SingleProps | MultiProps;
+
+export const SearchableSelectField: React.FC<SearchableSelectFieldProps> = (
+  props,
+) => {
+  const {
+    id,
+    label,
+    placeholder = "-- اختر --",
+    error,
+    options,
+    loading,
+    disabled = false,
+    hideLabel = false,
+  } = props;
+  const multiple = props.multiple === true;
+
   const [isOpen, setIsOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [selectedLabel, setSelectedLabel] = useState("");
@@ -42,14 +57,17 @@ export const SearchableSelectField: React.FC<SearchableSelectFieldProps> = ({
     );
   }, [options, searchValue, loading]);
 
+  // Single-select: keep deriving the shown label from the current value.
   useEffect(() => {
-    if (value) {
-      const selected = options.find((opt) => opt.value === value);
+    if (multiple) return;
+    const singleValue = (props as SingleProps).value;
+    if (singleValue) {
+      const selected = options.find((opt) => opt.value === singleValue);
       setSelectedLabel(selected?.label || "");
     } else {
       setSelectedLabel("");
     }
-  }, [value, options]);
+  }, [multiple, props, options]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -73,10 +91,36 @@ export const SearchableSelectField: React.FC<SearchableSelectFieldProps> = ({
   }, [isOpen]);
 
   const handleSelect = (option: Option) => {
-    onChange?.(option.value);
+    if (multiple) {
+      const current = (props as MultiProps).values ?? [];
+      const next = current.includes(option.value)
+        ? current.filter((v) => v !== option.value)
+        : [...current, option.value];
+      (props as MultiProps).onChange?.(next);
+      return;
+    }
+    (props as SingleProps).onChange?.(option.value);
     setSelectedLabel(option.label);
     setIsOpen(false);
     setSearchValue("");
+  };
+
+  const triggerLabel = (() => {
+    if (multiple) {
+      const values = (props as MultiProps).values ?? [];
+      if (values.length === 0) return placeholder;
+      if (values.length === 1) {
+        const only = options.find((o) => o.value === values[0]);
+        return only?.label || placeholder;
+      }
+      return `${values.length} محدد`;
+    }
+    return selectedLabel || placeholder;
+  })();
+
+  const isSelected = (optionValue: string) => {
+    if (multiple) return ((props as MultiProps).values ?? []).includes(optionValue);
+    return (props as SingleProps).value === optionValue;
   };
 
   return (
@@ -93,7 +137,7 @@ export const SearchableSelectField: React.FC<SearchableSelectFieldProps> = ({
           onClick={() => setIsOpen(!isOpen)}
           className="w-full border rounded px-3 py-2 text-right bg-white focus:outline-none focus:ring-2 focus:ring-primary"
         >
-          {selectedLabel || placeholder}
+          {triggerLabel}
         </button>
 
         {isOpen && (
@@ -123,18 +167,24 @@ export const SearchableSelectField: React.FC<SearchableSelectFieldProps> = ({
                   لا توجد نتائج
                 </div>
               ) : (
-                filteredOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => handleSelect(option)}
-                    className={`w-full text-right px-3 py-2 hover:bg-gray-100 ${
-                      value === option.value ? "bg-gray-50" : ""
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))
+                filteredOptions.map((option) => {
+                  const selected = isSelected(option.value);
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => handleSelect(option)}
+                      className={`w-full flex items-center justify-between text-right px-3 py-2 hover:bg-gray-100 ${
+                        selected ? "bg-gray-50" : ""
+                      }`}
+                    >
+                      <span>{option.label}</span>
+                      {multiple && selected && (
+                        <Check className="w-4 h-4 text-primary shrink-0" />
+                      )}
+                    </button>
+                  );
+                })
               )}
             </div>
           </div>

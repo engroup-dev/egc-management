@@ -2,7 +2,7 @@
 
 The feature needs three things in this order:
 
-1. The DB migrations (two files, in order).
+1. The DB migrations (three files, in order).
 2. The Vault secret.
 3. The files service on the EGC server.
 
@@ -11,9 +11,16 @@ After those, release the app version that contains the feature.
 **The migrations only add:**
 - a new schema, `drawings`, the same way `boq`, `contracts` and `tasks` each have their own
 - 4 tables in it: `drawings.folders`, `drawings.versions`, `drawings.notices`, `drawings.access`
-- 15 functions in it (`drawings.my_caps`, `drawings.add_version`, …)
+- 18 functions in it (`drawings.my_caps`, `drawings.add_version`, …)
 - their RLS policies
 - (second file) standard file names, see below
+- (third file) default folders for every project, see below
+
+**Default folders.** Every project starts with nine folders, in this order: رفع مساحي, خرائط معمارية, انشائية, تصميم داخلي, منظومة تكييف, منظومة الحريق, سباكة, كهرباء, الحدائق و المنطقة الخارجية.
+- Each default reuses the existing map type that means the same thing (keeping its name). Only missing ones are added to `public.map_types`, so they also appear in Settings › الخرائط and in finance. `01_preflight.sql` shows the mapping before you run it.
+- Users can remove any folder and add others; added folders come after the defaults. A removed default is never re-created.
+- New projects get the folders from a trigger on `public.projects`. **That table is shared with the Fields app**, so projects created there get them too. The migration fills every existing project once.
+- The order is `drawings.folders.position`; the mapping is `drawings.default_folders`, and it can be changed later with SQL.
 
 **Standard file names.** Users upload any file; the system names it
 `<project name>-<map type name>-v<version>.<ext>`, e.g. `Project_627H6I-خرائط_معمارية-v3.pdf`.
@@ -33,6 +40,7 @@ After those, release the app version that contains the feature.
 |---|---|---|
 | `supabase/migrations/20261020120000_project_drawings.sql` | the feature | adds only |
 | `supabase/migrations/20261025120000_drawings_file_naming.sql` | standard file names; run **after** the first | adds a column; renames existing drawing versions (none on a first rollout) |
+| `supabase/migrations/20261027120000_drawings_default_folders.sql` | default folders; run **third** | may add up to 9 map types; adds folders to every project; adds a trigger on `public.projects` |
 | `01_preflight.sql` | checks the DB has everything the migration needs | no (read-only) |
 | `02_verify.sql` | checks the result | no (read-only) |
 | `03_rollback.sql` | removes the feature's objects again | deletes drawings data only |
@@ -63,9 +71,10 @@ Run `01_preflight.sql`.
 
 ### 2. Migrations
 
-Run these two files, **in this order**, each as its own paste. Each should finish with "Success. No rows returned".
+Run these files, **in this order**, each as its own paste. The first two should finish with "Success. No rows returned"; the third shows how many projects and folders it seeded.
 1. `supabase/migrations/20261020120000_project_drawings.sql`
 2. `supabase/migrations/20261025120000_drawings_file_naming.sql`
+3. `supabase/migrations/20261027120000_drawings_default_folders.sql`. Check the `info: default folder` rows of `01_preflight.sql` first.
 
 Both are idempotent. If you ever re-run the first one, re-run the second one after it: the first one on its own puts back the old `add_version`, which doesn't make standard names. (`02_verify.sql` catches this: "every version has a standard name" turns false after the next upload.)
 

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Dialog from "../../ui/Dialog";
 import Button from "../../ui/Button";
+import { SearchableSelectField } from "../../ui/inputs/SearchableSelectField";
 import {
   useAddDrawingFolder,
   useAllMapTypes,
@@ -32,18 +33,21 @@ const AddFolderDialog = ({ projectId, usedMapTypeIds, isOpen, onClose }: Props) 
   );
 
   const {
-    register,
+    control,
     handleSubmit,
     reset,
+    watch,
     formState: { errors },
   } = useForm<AddDrawingFolderFormValues>({
     resolver: zodResolver(AddDrawingFolderSchema),
-    defaultValues: { mapTypeId: "" },
+    defaultValues: { mapTypeIds: [] },
   });
+
+  const selectedCount = watch("mapTypeIds")?.length ?? 0;
 
   useEffect(() => {
     if (isOpen) {
-      reset({ mapTypeId: "" });
+      reset({ mapTypeIds: [] });
       setError(null);
     }
   }, [isOpen, reset]);
@@ -51,10 +55,10 @@ const AddFolderDialog = ({ projectId, usedMapTypeIds, isOpen, onClose }: Props) 
   const onSubmit = async (values: AddDrawingFolderFormValues) => {
     setError(null);
     try {
-      await add.mutateAsync(values.mapTypeId);
+      await add.mutateAsync(values.mapTypeIds);
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "تعذر إضافة نوع الخريطة");
+      setError(e instanceof Error ? e.message : "تعذر إضافة أنواع الخرائط");
     }
   };
 
@@ -75,26 +79,23 @@ const AddFolderDialog = ({ projectId, usedMapTypeIds, isOpen, onClose }: Props) 
             .
           </p>
         ) : (
-          <div className="flex flex-col">
-            <label htmlFor="drawing-map-type" className="mb-1 text-sm text-foreground">
-              نوع الخريطة
-            </label>
-            <select
-              id="drawing-map-type"
-              {...register("mapTypeId")}
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="">اختر...</option>
-              {available.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-            {errors.mapTypeId && (
-              <span className="mt-1 text-xs text-red-500">{errors.mapTypeId.message}</span>
+          <Controller
+            control={control}
+            name="mapTypeIds"
+            render={({ field }) => (
+              <SearchableSelectField
+                id="drawing-map-type"
+                label="نوع الخريطة"
+                placeholder="اختر..."
+                multiple
+                options={available.map((m) => ({ value: m.id, label: m.name }))}
+                values={field.value}
+                onChange={field.onChange}
+                loading={mapTypes.isLoading}
+                error={errors.mapTypeIds as { message?: string } | undefined}
+              />
             )}
-          </div>
+          />
         )}
 
         {(error || mapTypes.error) && (
@@ -106,7 +107,7 @@ const AddFolderDialog = ({ projectId, usedMapTypeIds, isOpen, onClose }: Props) 
             إلغاء
           </Button>
           <Button type="submit" loading={add.isPending} disabled={available.length === 0}>
-            إضافة
+            {selectedCount > 0 ? `إضافة (${selectedCount})` : "إضافة"}
           </Button>
         </div>
       </form>

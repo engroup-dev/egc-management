@@ -8,7 +8,9 @@ export const DrawingStatusSchema = z.object({
 export type DrawingStatusFormValues = z.infer<typeof DrawingStatusSchema>;
 
 export const AddDrawingFolderSchema = z.object({
-  mapTypeId: z.string().min(1, "اختر نوع الخريطة"),
+  mapTypeIds: z
+    .array(z.string().min(1))
+    .min(1, "اختر نوع خريطة واحد على الأقل"),
 });
 
 export type AddDrawingFolderFormValues = z.infer<typeof AddDrawingFolderSchema>;

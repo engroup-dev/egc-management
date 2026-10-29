@@ -77,7 +77,7 @@ type NameRow = { first_name: string | null; last_name: string | null } | null;
 const personName = (u: NameRow) => (u ? [u.first_name, u.last_name].filter(Boolean).join(" ") || null : null);
 
 function toError(error: { message: string; code?: string }, fallback: string): Error {
-  if (error.code === "23505") return new Error("نوع الخريطة هذا موجود بالفعل في المشروع");
+  if (error.code === "23505") return new Error("أحد الأنواع المختارة موجود بالفعل في المشروع");
   if (error.code === "42501") return new Error(error.message || "ليست لديك صلاحية لهذه العملية");
   return new Error(error.message || fallback);
 }
@@ -122,7 +122,8 @@ export function useMyDrawingCaps(projectId: string | undefined) {
 }
 
 /** Every folder of the project the user takes part in, with its latest
- * version (when the user may view that folder). Sorted by name. */
+ * version (when the user may view that folder). In `position` order: the
+ * default folders first, then the ones added later. */
 export function useDrawingFolders(projectId: string | undefined) {
   return useQuery({
     queryKey: drawingKeys.folders(projectId ?? ""),
@@ -162,7 +163,7 @@ export function useDrawingFolders(projectId: string | undefined) {
           statusByName: f.status_by ? people.get(f.status_by) ?? null : null,
           latest: latest.get(f.id) ?? null,
         }))
-        .sort((a, b) => a.name.localeCompare(b.name, "ar"));
+        .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name, "ar"));
     },
   });
 }
@@ -262,11 +263,13 @@ function useInvalidateProject(projectId: string | undefined) {
 export function useAddDrawingFolder(projectId: string | undefined) {
   const invalidate = useInvalidateProject(projectId);
   return useMutation({
-    mutationFn: async (mapTypeId: string) => {
-      const { error } = await drawings()
-        .from("folders")
-        .insert({ project_id: projectId as string, map_type_id: mapTypeId });
-      if (error) throw toError(error, "تعذر إضافة نوع الخريطة");
+    mutationFn: async (mapTypeIds: string[]) => {
+      const rows = mapTypeIds.map((id) => ({
+        project_id: projectId as string,
+        map_type_id: id,
+      }));
+      const { error } = await drawings().from("folders").insert(rows);
+      if (error) throw toError(error, "تعذر إضافة أنواع الخرائط");
     },
     onSuccess: invalidate,
   });
