@@ -77,7 +77,7 @@ type NameRow = { first_name: string | null; last_name: string | null } | null;
 const personName = (u: NameRow) => (u ? [u.first_name, u.last_name].filter(Boolean).join(" ") || null : null);
 
 function toError(error: { message: string; code?: string }, fallback: string): Error {
-  if (error.code === "23505") return new Error("نوع الخريطة هذا موجود بالفعل في المشروع");
+  if (error.code === "23505") return new Error("أحد الأنواع المختارة موجود بالفعل في المشروع");
   if (error.code === "42501") return new Error(error.message || "ليست لديك صلاحية لهذه العملية");
   return new Error(error.message || fallback);
 }
@@ -263,11 +263,13 @@ function useInvalidateProject(projectId: string | undefined) {
 export function useAddDrawingFolder(projectId: string | undefined) {
   const invalidate = useInvalidateProject(projectId);
   return useMutation({
-    mutationFn: async (mapTypeId: string) => {
-      const { error } = await drawings()
-        .from("folders")
-        .insert({ project_id: projectId as string, map_type_id: mapTypeId });
-      if (error) throw toError(error, "تعذر إضافة نوع الخريطة");
+    mutationFn: async (mapTypeIds: string[]) => {
+      const rows = mapTypeIds.map((id) => ({
+        project_id: projectId as string,
+        map_type_id: id,
+      }));
+      const { error } = await drawings().from("folders").insert(rows);
+      if (error) throw toError(error, "تعذر إضافة أنواع الخرائط");
     },
     onSuccess: invalidate,
   });
