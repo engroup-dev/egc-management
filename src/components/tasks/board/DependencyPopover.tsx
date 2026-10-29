@@ -5,9 +5,9 @@ import { DIRECTION_STYLES, DirectionToggle, type LinkDirection } from "./Depende
 import type { LinkRef, TaskLinks } from "../../../hooks/tasks/dependencyFlags";
 import type { DependencyPair, TaskRow } from "../../../hooks/tasks/useTaskBoard";
 
-// The board's quick link editor — opened from the "تبدأ بعد" cell or the
+// The board's quick link editor — opened from the row's link icons or the
 // row's right-click menu. Same-board links only: linking to another board
-// stays in the task panel (DependenciesSection.tsx). Picking keeps it open,
+// (another zone) stays in the task panel (DependenciesSection.tsx). Picking keeps it open,
 // so a few links can be added in a row.
 
 const SECTION_LABELS: Record<LinkDirection, string> = {

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus } from "lucide-react";
+import { ArrowUpLeft, Plus, X } from "lucide-react";
 import type { Checklist, ChecklistItem } from "../../../hooks/tasks/useTaskDetail";
 
 interface ChecklistsSectionProps {
@@ -7,6 +7,10 @@ interface ChecklistsSectionProps {
   onAddChecklist: (name: string) => void;
   onAddItem: (checklistId: string, content: string) => void;
   onToggleItem: (itemId: string, checked: boolean) => void;
+  onRenameItem?: (itemId: string, content: string) => void;
+  onDeleteItem?: (itemId: string) => void;
+  /** ↗ — the item becomes a task again (or a new task). */
+  onItemToTask?: (itemId: string) => void;
   /** May add checklists and items (edit rights). Default true. */
   canEdit?: boolean;
   /** May tick items (status rights: an assignee can). Default true. */
@@ -17,16 +21,23 @@ function ChecklistBlock({
   checklist,
   onAddItem,
   onToggleItem,
+  onRenameItem,
+  onDeleteItem,
+  onItemToTask,
   canEdit,
   canTick,
 }: {
   checklist: Checklist & { items: ChecklistItem[] };
   onAddItem: (checklistId: string, content: string) => void;
   onToggleItem: (itemId: string, checked: boolean) => void;
+  onRenameItem?: (itemId: string, content: string) => void;
+  onDeleteItem?: (itemId: string) => void;
+  onItemToTask?: (itemId: string) => void;
   canEdit: boolean;
   canTick: boolean;
 }) {
   const [newItem, setNewItem] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
   const done = checklist.items.filter((i) => i.is_checked).length;
 
   const submit = () => {
@@ -48,10 +59,7 @@ function ChecklistBlock({
       </div>
       <div className="space-y-1">
         {checklist.items.map((item) => (
-          <label
-            key={item.id}
-            className="flex items-center gap-2 rounded px-1 py-1 text-sm hover:bg-gray-50"
-          >
+          <div key={item.id} className="group flex items-center gap-2 rounded px-1 py-1 text-sm hover:bg-gray-50">
             <input
               type="checkbox"
               checked={item.is_checked}
@@ -59,10 +67,52 @@ function ChecklistBlock({
               onChange={(e) => onToggleItem(item.id, e.target.checked)}
               className="h-3.5 w-3.5"
             />
-            <span className={item.is_checked ? "text-gray-400 line-through" : "text-gray-700"}>
-              {item.content}
-            </span>
-          </label>
+            {editingId === item.id ? (
+              <input
+                autoFocus
+                dir="auto"
+                defaultValue={item.content}
+                onBlur={(e) => {
+                  setEditingId(null);
+                  const next = e.target.value.trim();
+                  if (next && next !== item.content) onRenameItem?.(item.id, next);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  if (e.key === "Escape") setEditingId(null);
+                }}
+                className="min-w-0 flex-1 rounded border border-primary/40 px-1 text-sm outline-none"
+              />
+            ) : (
+              <span
+                onClick={() => canEdit && onRenameItem && setEditingId(item.id)}
+                title={canEdit && onRenameItem ? "انقر لتعديل النص" : undefined}
+                className={`flex-1 ${canEdit && onRenameItem ? "cursor-text" : ""} ${
+                  item.is_checked ? "text-gray-400 line-through" : "text-gray-700"
+                }`}
+              >
+                {item.content}
+              </span>
+            )}
+            {canEdit && onItemToTask && editingId !== item.id && (
+              <button
+                onClick={() => onItemToTask(item.id)}
+                title={item.source_task_id ? "إرجاعها مهمة" : "تحويلها إلى مهمة"}
+                className="rounded p-0.5 text-gray-300 opacity-0 hover:bg-gray-100 hover:text-primary group-hover:opacity-100"
+              >
+                <ArrowUpLeft className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {canEdit && onDeleteItem && editingId !== item.id && (
+              <button
+                onClick={() => onDeleteItem(item.id)}
+                title="حذف البند"
+                className="rounded p-0.5 text-gray-300 opacity-0 hover:bg-gray-100 hover:text-red-600 group-hover:opacity-100"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
         ))}
       </div>
       {canEdit && (
@@ -91,6 +141,9 @@ export default function ChecklistsSection({
   onAddChecklist,
   onAddItem,
   onToggleItem,
+  onRenameItem,
+  onDeleteItem,
+  onItemToTask,
   canEdit = true,
   canTick = true,
 }: ChecklistsSectionProps) {
@@ -112,6 +165,9 @@ export default function ChecklistsSection({
           checklist={c}
           onAddItem={onAddItem}
           onToggleItem={onToggleItem}
+          onRenameItem={onRenameItem}
+          onDeleteItem={onDeleteItem}
+          onItemToTask={onItemToTask}
           canEdit={canEdit}
           canTick={canTick}
         />

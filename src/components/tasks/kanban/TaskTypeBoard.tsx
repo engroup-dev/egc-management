@@ -58,6 +58,8 @@ interface TaskTypeBoardProps {
   onChangeTaskType: (taskId: string, taskTypeId: string) => void;
   /** edit_all_tasks: the "new type" column. */
   canAddType: boolean;
+  /** Highlight colour fills (the diagram's 🖍️), by task. */
+  highlights?: Map<string, string>;
 }
 
 export default function TaskTypeBoard({
@@ -70,6 +72,7 @@ export default function TaskTypeBoard({
   onOpenTask,
   onChangeTaskType,
   canAddType,
+  highlights,
 }: TaskTypeBoardProps) {
   const isTemplate = useTemplateMode();
   const adapter = useMemo(() => dayAdapter(isTemplate), [isTemplate]);
@@ -119,6 +122,7 @@ export default function TaskTypeBoard({
       dependency={dependencyFlags.get(task.id)}
       draggable={canEdit(task.id)}
       overlay={overlay}
+      highlight={highlights?.get(task.id) ?? null}
       onOpen={() => onOpenTask(task.id)}
     />
   );
@@ -188,6 +192,7 @@ function TaskCard({
   dependency,
   draggable,
   overlay,
+  highlight,
   onOpen,
 }: {
   task: TaskRow;
@@ -198,6 +203,7 @@ function TaskCard({
   dependency?: DependencyFlags;
   draggable: boolean;
   overlay: boolean;
+  highlight: string | null;
   onOpen: () => void;
 }) {
   const { setNodeRef, attributes, listeners, isDragging } = useDraggable({ id: task.id, disabled: !draggable || overlay });
@@ -214,7 +220,7 @@ function TaskCard({
       } ${isDragging ? "opacity-40" : ""} ${overlay ? "w-[17rem] rotate-1 shadow-lg" : ""} ${
         task.is_overdue && !done ? "border-red-200" : "border-gray-200"
       }`}
-      style={{ borderRightWidth: 4, borderRightColor: done ? "#9CA3AF" : color }}
+      style={{ borderRightWidth: 4, borderRightColor: done ? "#9CA3AF" : color, ...(highlight && { background: highlight }) }}
     >
       {parentTitle && <div className="mb-0.5 truncate text-[11px] text-gray-400">{parentTitle}</div>}
       <div className={`flex min-w-0 items-center gap-1 text-[13px] font-semibold ${done ? "text-gray-500" : "text-gray-900"}`}>

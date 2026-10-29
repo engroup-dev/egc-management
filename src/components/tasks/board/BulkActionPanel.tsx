@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { CheckCircle2, ChevronUp, Flag, Loader2, Send, Trash2, UserPlus, X } from "lucide-react";
+import { CheckCircle2, ChevronUp, Flag, Loader2, Send, Trash2, UserPlus, X, CopyPlus } from "lucide-react";
 import ConfirmDialog from "../../ui/ConfirmDialog";
 import { useClickOutside } from "../../../hooks/tasks/useClickOutside";
 import type { AssignablePerson } from "../../../hooks/tasks/useAssignablePeople";
@@ -39,6 +39,8 @@ interface BulkActionPanelProps {
   onAssignChange: (add: string[], remove: string[]) => Promise<unknown>;
   onDelete: () => Promise<unknown>;
   onPush?: () => void;
+  /** "نسخ إلى مناطق…" (zone boards of a project space). */
+  onCopyToZones?: () => void;
   /** false while the bar fades out after the selection empties. */
   visible: boolean;
 }
@@ -65,6 +67,7 @@ export default function BulkActionPanel({
   onAssignChange,
   onDelete,
   onPush,
+  onCopyToZones,
   visible,
 }: BulkActionPanelProps) {
   const [busy, setBusy] = useState(false);
@@ -154,6 +157,12 @@ export default function BulkActionPanel({
             </BarButton>
           )}
 
+          {onCopyToZones && (
+            <BarButton icon={<CopyPlus className="h-3.5 w-3.5" />} disabled={busy} onClick={onCopyToZones}>
+              نسخ إلى مناطق…
+            </BarButton>
+          )}
+
           <span className="mx-1 h-5 w-px bg-gray-200" />
           <BarButton
             icon={busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
@@ -178,8 +187,8 @@ export default function BulkActionPanel({
       <ConfirmDialog
         open={confirmingDelete}
         title="حذف المهام المحددة؟"
-        message={`${deleteMessage} لا يمكن التراجع عن هذا.`}
-        confirmLabel="حذف نهائي"
+        message={`${deleteMessage} يمكن التراجع بـ Ctrl+Z.`}
+        confirmLabel="حذف"
         confirmVariant="error"
         loading={busy}
         onCancel={() => setConfirmingDelete(false)}

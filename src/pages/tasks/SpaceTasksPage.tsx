@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useSpaceCaps } from "../../hooks/tasks/useTaskAccess";
 import { Link, Outlet, useNavigate, useParams } from "react-router-dom";
 import {
+  ArrowLeftRight,
   ChartGantt,
   ChevronDown,
   ChevronLeft,
@@ -44,6 +45,8 @@ import {
 import type { TaskRow } from "../../hooks/tasks/useTaskBoard";
 import { TaskListPageSkeleton } from "../../components/tasks/TasksSkeletons";
 import { useCreateTaskDialog } from "../../components/tasks/schedule/CreateTaskDialogContext";
+import ZonesTimeline from "../../components/tasks/zones/ZonesTimeline";
+import { useSpaceZones } from "../../hooks/tasks/useZones";
 
 // "All tasks in this space" — same full inline-edit/filter/sort shape as
 // AssigneeViewPage.tsx/TaskTypeViewPage.tsx/ProjectViewPage.tsx, but
@@ -61,8 +64,10 @@ import { useCreateTaskDialog } from "../../components/tasks/schedule/CreateTaskD
 //
 // `view` comes from the route, like the board page: space/:id is the list,
 // space/:id/gantt every board of the space on one TaskGantt — a header row
-// per board with its task tree under it. Search, the filters and the KPI
-// cards narrow both views the same way.
+// per board with its task tree under it; space/:id/zones the timeline across
+// zones (one row per task, one bar per zone — the manager's "timeline that
+// takes the zoning into account"). Search, the filters and the KPI cards
+// narrow every view the same way.
 
 interface BoardGroup {
   key: string;
@@ -87,17 +92,18 @@ function AddTaskRow({ onAdd }: { onAdd: () => void }) {
 // The Gantt's board rows: a task belongs to its board.
 const boardOf = (task: TaskRow) => task.board_id;
 
-export default function SpaceTasksPage({ view }: { view: "list" | "gantt" }) {
+export default function SpaceTasksPage({ view }: { view: "list" | "gantt" | "zones" }) {
   // taskId is the nested detail panel's param, visible here too.
   const { spaceId, taskId } = useParams<{ spaceId: string; taskId?: string }>();
   const navigate = useNavigate();
   const { data, loading, error, onChangeTaskDates, ...mutations } =
     useTaskDirectory({ spaceId });
   // The detail panel opens under the current view, so closing it stays there.
-  const basePath = `/tasks/space/${spaceId}${view === "gantt" ? "/gantt" : ""}`;
+  const basePath = `/tasks/space/${spaceId}${view === "list" ? "" : `/${view}`}`;
   const openTask = (id: string) => navigate(`${basePath}/task/${id}`);
   const { data: sidebarData } = useTasksSidebar();
   const spaceCaps = useSpaceCaps(spaceId);
+  const { zones } = useSpaceZones(spaceId);
   const { openCreateTask } = useCreateTaskDialog();
   const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
@@ -299,6 +305,19 @@ export default function SpaceTasksPage({ view }: { view: "list" | "gantt" }) {
               <ChartGantt className="h-3.5 w-3.5" />
               مخطط زمني
             </Link>
+            {(zones.length > 0 || view === "zones") && (
+              <Link
+                to={`/tasks/space/${spaceId}/zones`}
+                className={`flex items-center gap-1.5 border-r border-gray-200 px-3 py-1.5 ${
+                  view === "zones"
+                    ? "bg-primary-superLight font-medium text-primary"
+                    : "text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                <ArrowLeftRight className="h-3.5 w-3.5" />
+                المناطق
+              </Link>
+            )}
           </div>
           <div className="flex w-56 items-center gap-2 rounded-lg border border-gray-200 bg-white px-2 py-1.5">
             <Search className="h-3.5 w-3.5 shrink-0 text-gray-400" />
@@ -364,7 +383,18 @@ export default function SpaceTasksPage({ view }: { view: "list" | "gantt" }) {
         />
       )}
 
-      {view === "gantt" ? (
+      {view === "zones" ? (
+        <div className="flex-1 overflow-hidden">
+          <ZonesTimeline
+            spaceId={spaceId as string}
+            tasks={visibleTasks}
+            zones={zones}
+            statuses={data.statuses}
+            dependencies={data.dependencies}
+            onOpenTask={openTask}
+          />
+        </div>
+      ) : view === "gantt" ? (
         <div className="flex-1 overflow-hidden">
           <TaskGantt
             key={spaceId}

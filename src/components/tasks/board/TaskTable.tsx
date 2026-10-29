@@ -68,6 +68,7 @@ interface TaskTableProps {
   onChangeLag: (taskId: string, lagDays: number) => void;
   onChangeAssignees: (taskId: string, userIds: string[]) => void;
   onCreateTask: (title: string, parentTaskId: string | null) => void;
+  onRenameTask?: (taskId: string, title: string) => void;
   onChangeValue: (taskId: string, fieldDefinitionId: string, value: Json) => void;
   onAttachField: (fieldDefinitionId: string) => void;
   onCreateAndAttachField: (input: { name: string; name_ar: string; type: FieldType; config: Json }) => void;
@@ -86,6 +87,7 @@ interface TaskTableProps {
   /** When set, the selection bar also offers "add to boards…" for the
    * selected tasks (template push — see useTemplateSync.ts). */
   onPushSelected?: (taskIds: string[]) => void;
+  onCopySelectedToZones?: (taskIds: string[]) => void;
 }
 
 export default function TaskTable({
@@ -122,6 +124,7 @@ export default function TaskTable({
   onChangeLag,
   onChangeAssignees,
   onCreateTask,
+  onRenameTask,
   onChangeValue,
   onAttachField,
   onCreateAndAttachField,
@@ -135,6 +138,7 @@ export default function TaskTable({
   onBulkAssign,
   onBulkDelete,
   onPushSelected,
+  onCopySelectedToZones,
 }: TaskTableProps) {
   const [groupBy, setGroupBy] = useState<GroupBy>("none");
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
@@ -394,6 +398,14 @@ export default function TaskTable({
                 }
               : undefined
           }
+          onCopyToZones={
+            onCopySelectedToZones
+              ? () => {
+                  onCopySelectedToZones(Array.from(selectedIds));
+                  clearSelection();
+                }
+              : undefined
+          }
           visible
         />
     );
@@ -590,6 +602,7 @@ export default function TaskTable({
                 onChangeLag={onChangeLag}
                 onChangeAssignees={onChangeAssignees}
                 onCreateTask={onCreateTask}
+                onRenameTask={onRenameTask}
                 onChangeValue={onChangeValue}
                 draggedId={draggedId}
                 onDragStart={setDraggedId}

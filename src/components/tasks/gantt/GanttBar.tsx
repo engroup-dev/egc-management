@@ -124,6 +124,8 @@ interface GanttBarProps {
   describe: (startDay: number, endDay: number) => string;
   /** The status colour — the bar's tint and its start edge. */
   color: string;
+  /** A highlight colour (the diagram's 🖍️), shown as the bar's fill. */
+  highlight?: string | null;
   /** done/closed status category — drawn grey with a tick. */
   done: boolean;
   overdue: boolean;
@@ -167,6 +169,7 @@ export default function GanttBar({
   subtitle,
   describe,
   color,
+  highlight = null,
   done,
   overdue,
   dependency,
@@ -283,11 +286,11 @@ export default function GanttBar({
   const second = subtitle(view.startDay, view.endDay, days);
 
   const tone = done
-    ? { background: "#F3F4F6", borderColor: "#E5E7EB", borderRightColor: "#9CA3AF" }
+    ? { background: highlight ?? "#F3F4F6", borderColor: "#E5E7EB", borderRightColor: "#9CA3AF" }
     : summary
       ? { background: "color-mix(in srgb, #374151 9%, white)", borderColor: "#374151", borderRightColor: "#374151" }
       : {
-          background: `color-mix(in srgb, ${color} 16%, white)`,
+          background: highlight ?? `color-mix(in srgb, ${color} 16%, white)`,
           borderColor: `color-mix(in srgb, ${color} 45%, white)`,
           borderRightColor: color,
         };
@@ -406,7 +409,7 @@ function BarLabel({
           className={`flex min-w-0 items-center gap-1 text-[12.5px] font-semibold ${done ? "text-gray-500" : "text-gray-900"}`}
         >
           {externalWait && (
-            <span className={`inline-flex shrink-0 ${onBar ? "rounded-full bg-white/90 p-px" : ""} ${WAIT_STYLE.text}`} title="تنتظر مهمة في لوحة أخرى">
+            <span className={`inline-flex shrink-0 ${onBar ? "rounded-full bg-white/90 p-px" : ""} ${WAIT_STYLE.text}`} title="تنتظر مهمة في منطقة أو لوحة أخرى">
               <WAIT_STYLE.Icon className="h-3 w-3" />
             </span>
           )}

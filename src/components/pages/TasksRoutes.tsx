@@ -41,7 +41,7 @@ import TaskLogPage from "../../pages/tasks/TaskLogPage";
 // TasksPage.tsx's space cards — separate from space/:id/settings (D9,
 // which also holds D10's automations tab; react-router matches the more
 // specific path so the two bare/`/settings` routes don't collide).
-// board/:id/gantt (and space/:id/gantt) is the same page in its Gantt view — a path
+// board/:id/gantt (and space/:id/gantt, space/:id/zones) is the same page in another view — a path
 // segment rather than ?view=gantt because TaskDetailPanel's base path is
 // built from pathname alone, so a query param would be dropped every
 // time the panel opened or closed. board/:id/flow (the link diagram) and
@@ -108,6 +108,9 @@ export default function TasksRoutes() {
             <Route path="task/:taskId" element={<TaskDetailPanel />} />
           </Route>
           <Route path="space/:spaceId/gantt" element={<SpaceTasksPage view="gantt" />}>
+            <Route path="task/:taskId" element={<TaskDetailPanel />} />
+          </Route>
+          <Route path="space/:spaceId/zones" element={<SpaceTasksPage view="zones" />}>
             <Route path="task/:taskId" element={<TaskDetailPanel />} />
           </Route>
         </Route>

@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronDown, ChevronLeft, GripVertical, Plus, Link2, Camera, Paperclip, MessageSquare, AlignLeft } from "lucide-react";
+import { ChevronDown, ChevronLeft, GripVertical, Plus, Link2, Camera, Paperclip, MessageSquare, AlignLeft, Pencil } from "lucide-react";
 import StatusCell from "./StatusCell";
 import PriorityCell from "./PriorityCell";
 import DateCell from "./DateCell";
@@ -65,7 +65,7 @@ interface TaskRowProps {
   departmentNamesById: Map<string, string>;
   linkedTaskIds: Set<string>;
   dependencyFlags: Map<string, DependencyFlags>;
-  /** Every link of each task — the "تبدأ بعد" column. */
+  /** Every link of each task — the row's link icons and their popover. */
   dependencyLinks: Map<string, TaskLinks>;
   onLink: (pair: DependencyPair) => void;
   onUnlink: (pairs: DependencyPair[]) => void;
@@ -91,6 +91,8 @@ interface TaskRowProps {
   /** On a template board: title typed in the inline row. Elsewhere: called
    * with an empty title to open the create dialog for a subtask. */
   onCreateTask: (title: string, parentTaskId: string) => void;
+  /** Inline title edit (pencil on hover, or F2 on the title). */
+  onRenameTask?: (taskId: string, title: string) => void;
   onChangeValue: (taskId: string, fieldDefinitionId: string, value: Json) => void;
   draggedId: string | null;
   onDragStart: (id: string) => void;
@@ -141,6 +143,7 @@ export default function TaskRow({
   onChangeLag,
   onChangeAssignees,
   onCreateTask,
+  onRenameTask,
   onChangeValue,
   draggedId,
   onDragStart,
@@ -163,6 +166,8 @@ export default function TaskRow({
   const templateRoles = useTemplateRoles();
   // What I may do on THIS task: the space's rights, plus an assignee's own.
   const rowCaps = useRowCaps(assigneesByTask.get(task.id) ?? []);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const canRename = !!onRenameTask && rowCaps.edit;
   const selected = !!selectedIds?.has(task.id);
   // Once anything is selected every row shows its box, so picking several
   // doesn't need a hover per row.
@@ -285,13 +290,49 @@ export default function TaskRow({
               popover is position:absolute off a `relative` ancestor inside
               here, and an overflow-hidden ancestor clips absolutely
               positioned descendants too, not just overflowing text. */}
-          <div ref={linkMenu.titleRef} className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
-            <button
-              onClick={openTask}
-              className="truncate text-sm text-gray-800 hover:underline"
-            >
-              {task.title}
-            </button>
+          <div ref={linkMenu.titleRef} className="group/title flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+            {editingTitle ? (
+              <input
+                autoFocus
+                dir="auto"
+                defaultValue={task.title}
+                onFocus={(e) => e.target.select()}
+                onBlur={(e) => {
+                  setEditingTitle(false);
+                  const next = e.target.value.trim();
+                  if (next && next !== task.title) onRenameTask?.(task.id, next);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  if (e.key === "Escape") setEditingTitle(false);
+                }}
+                className="min-w-0 flex-1 rounded border border-primary/40 px-1 py-0.5 text-sm outline-none"
+              />
+            ) : (
+              <>
+                <button
+                  onClick={openTask}
+                  onKeyDown={(e) => {
+                    if (e.key === "F2" && canRename) {
+                      e.preventDefault();
+                      setEditingTitle(true);
+                    }
+                  }}
+                  className="truncate text-sm text-gray-800 hover:underline"
+                >
+                  {task.title}
+                </button>
+                {canRename && (
+                  <button
+                    onClick={() => setEditingTitle(true)}
+                    title="تعديل الاسم (F2)"
+                    className="shrink-0 rounded p-0.5 text-gray-300 opacity-0 hover:bg-gray-100 hover:text-gray-600 group-hover/title:opacity-100"
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                )}
+              </>
+            )}
 
             {tags.length > 0 && (
               <span
@@ -484,6 +525,7 @@ export default function TaskRow({
               onChangeLag={onChangeLag}
               onChangeAssignees={onChangeAssignees}
               onCreateTask={onCreateTask}
+              onRenameTask={onRenameTask}
               onChangeValue={onChangeValue}
               draggedId={draggedId}
               onDragStart={onDragStart}

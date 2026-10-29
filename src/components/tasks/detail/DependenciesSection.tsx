@@ -46,13 +46,27 @@ function DependencyRow({
         <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
       )}
       <span className="flex-1 truncate text-gray-700">{item.title}</span>
-      {item.otherBoard && (
+      {item.startTogether && (
+        <span className="shrink-0 rounded-full bg-orange-50 px-1.5 py-0.5 text-[10px] text-orange-700" title="تبدأ معها، لا بعد انتهائها">
+          تبدأ معاً
+        </span>
+      )}
+      {item.zoneChain ? (
         <span
           className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500"
-          title="مهمة في لوحة أخرى — الارتباط للمعلومة ولا يغيّر التواريخ"
+          title="نفس المهمة في المنطقة السابقة / التالية (ربط المناطق)"
         >
-          لوحة أخرى
+          ربط المناطق
         </span>
+      ) : (
+        item.otherBoard && (
+          <span
+            className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500"
+            title="مهمة في لوحة أخرى — تغيّر التواريخ إذا كانت اللوحتان منطقتين في نفس المساحة، وللمعلومة فقط إن كانت في مساحة أخرى"
+          >
+            لوحة أخرى
+          </span>
+        )
       )}
       <button onClick={() => onRemove(item.dependencyId)} className="text-gray-400 hover:text-gray-600">
         <X className="h-3 w-3" />

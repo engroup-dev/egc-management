@@ -10,6 +10,7 @@ import type { StatusRow, TaskRow, CustomColumn } from "./useTaskBoard";
 import type { Tag } from "./useAdminCatalog";
 import { extractMentionedTaskIds } from "./mentionUtils";
 import { recordAssignees, recordTaskPatch, recordTaskValue, type TaskPatch } from "./taskUndo";
+import { archiveTasks } from "./taskArchive";
 import { invalidateSchedule, saveTaskSchedule, type ScheduleChange } from "./useTaskSchedule";
 import { addDependency as insertDependency, removeDependencies } from "./dependencyEdit";
 
@@ -30,7 +31,7 @@ const FIELD_LABELS: Record<string, string> = {
   due_date: "تغيير تاريخ الاستحقاق",
   start_date: "تغيير تاريخ البدء",
   department_id: "تغيير القسم",
-  specialization_id: "تغيير التخصص",
+  task_type_id: "تغيير النوع",
 };
 
 export type Requirement = Database["tasks"]["Tables"]["task_requirements"]["Row"];
@@ -47,8 +48,12 @@ export interface DependencyTaskRef {
   title: string;
   statusCategory: Database["tasks"]["Enums"]["status_category"];
   dependencyId: string;
-  /** On another board: shown, but it doesn't move this task's dates. */
+  /** On another board (another zone of the space moves dates; another space doesn't). */
   otherBoard: boolean;
+  /** Starts with the other task, not after it. */
+  startTogether: boolean;
+  /** Made by "chain zones". */
+  zoneChain: boolean;
 }
 
 export interface Breadcrumb {
@@ -155,8 +160,8 @@ export function useTaskDetail(taskId: string | undefined) {
         supabase.from("departments").select("id, name_ar, name").eq("is_active", true),
         tasksDb.from("task_links").select("*").eq("task_id", taskId),
         tasksDb.from("task_requirements").select("*").eq("task_id", taskId),
-        tasksDb.from("task_dependencies").select("id, blocking_task_id").eq("blocked_task_id", taskId),
-        tasksDb.from("task_dependencies").select("id, blocked_task_id").eq("blocking_task_id", taskId),
+        tasksDb.from("task_dependencies").select("id, blocking_task_id, link_type, zone_chain").eq("blocked_task_id", taskId),
+        tasksDb.from("task_dependencies").select("id, blocked_task_id, link_type, zone_chain").eq("blocking_task_id", taskId),
         tasksDb.from("checklists").select("*, checklist_items(*)").eq("task_id", taskId).order("sort_order"),
         tasksDb
           .from("tasks")
@@ -223,7 +228,11 @@ export function useTaskDetail(taskId: string | undefined) {
         for (const s of extraStatuses ?? []) statusById.set(s.id, s);
       }
 
-      const toDependencyRef = (id: string, dependencyId: string): DependencyTaskRef | null => {
+      const toDependencyRef = (
+        id: string,
+        dependencyId: string,
+        dep: { link_type: string; zone_chain: boolean },
+      ): DependencyTaskRef | null => {
         const t = refTaskById.get(id);
         if (!t) return null;
         return {
@@ -232,14 +241,16 @@ export function useTaskDetail(taskId: string | undefined) {
           statusCategory: statusById.get(t.status_id)?.category ?? "not_started",
           dependencyId,
           otherBoard: t.board_id !== task.board_id,
+          startTogether: dep.link_type === "ss",
+          zoneChain: dep.zone_chain,
         };
       };
 
       const blocking = (blockingDeps ?? [])
-        .map((d) => toDependencyRef(d.blocking_task_id, d.id))
+        .map((d) => toDependencyRef(d.blocking_task_id, d.id, d))
         .filter((x): x is DependencyTaskRef => !!x);
       const blockedByMe = (blockedDeps ?? [])
-        .map((d) => toDependencyRef(d.blocked_task_id, d.id))
+        .map((d) => toDependencyRef(d.blocked_task_id, d.id, d))
         .filter((x): x is DependencyTaskRef => !!x);
 
       const subtasks = (childTasks ?? []).map((t) => ({
@@ -338,7 +349,7 @@ export function useTaskDetail(taskId: string | undefined) {
   };
 
   const updateField = useMutation({
-    mutationFn: async (patch: Partial<Pick<TaskRow, "title" | "description" | "status_id" | "priority" | "due_date" | "start_date" | "department_id">>) => {
+    mutationFn: async (patch: Partial<Pick<TaskRow, "title" | "description" | "status_id" | "priority" | "due_date" | "start_date" | "department_id" | "task_type_id">>) => {
       if (!taskId) return;
       const prevTask = query.data?.task;
       const { error } = await tasksDb.from("tasks").update(patch).eq("id", taskId);
@@ -501,6 +512,37 @@ export function useTaskDetail(taskId: string | undefined) {
       if (error) throw error;
     },
     onSuccess: invalidate,
+  });
+
+  const renameChecklistItem = useMutation({
+    mutationFn: async ({ itemId, content }: { itemId: string; content: string }) => {
+      const { error } = await tasksDb.from("checklist_items").update({ content }).eq("id", itemId);
+      if (error) throw error;
+    },
+    onSuccess: invalidate,
+  });
+
+  const deleteChecklistItem = useMutation({
+    mutationFn: async (itemId: string) => {
+      const { error } = await tasksDb.from("checklist_items").delete().eq("id", itemId);
+      if (error) throw error;
+    },
+    onSuccess: invalidate,
+  });
+
+  // ↗: the item becomes a task again (the one it was made from comes back,
+  // or a new one starts with this task) — migration 2026-10-29_flow_diagram_b.
+  const checklistItemToTask = useMutation({
+    mutationFn: async (itemId: string) => {
+      const { data: result, error } = await tasksDb.rpc("checklist_item_to_task", { p_item_id: itemId });
+      if (error) throw error;
+      return (result as unknown as { task_id: string }).task_id;
+    },
+    onSuccess: () => {
+      invalidate();
+      invalidateSchedule(queryClient, query.data?.task.board_id);
+      queryClient.invalidateQueries({ queryKey: ["flow-state"] });
+    },
   });
 
   const addRelationship = useMutation({
@@ -697,14 +739,14 @@ export function useTaskDetail(taskId: string | undefined) {
   // tasks_parent_task_id_fkey is ON DELETE CASCADE, so this also removes
   // every subtask underneath. The caller (TaskDetailPanel) navigates away
   // on success since the panel has nothing left to render.
+  // Archived with its subtasks, not deleted: Ctrl+Z brings it back.
   const deleteTask = useMutation({
     mutationFn: async () => {
       if (!taskId) throw new Error("no task id");
-      const { error } = await tasksDb.from("tasks").delete().eq("id", taskId);
-      if (error) throw error;
+      await archiveTasks([taskId], `حذف «${query.data?.task.title ?? ""}»`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["task-board", query.data?.task.board_id] });
+      invalidateSchedule(queryClient, query.data?.task.board_id);
     },
   });
 
@@ -738,6 +780,9 @@ export function useTaskDetail(taskId: string | undefined) {
     addChecklist: addChecklist.mutate,
     addChecklistItem: addChecklistItem.mutate,
     toggleChecklistItem: toggleChecklistItem.mutate,
+    renameChecklistItem: renameChecklistItem.mutate,
+    deleteChecklistItem: deleteChecklistItem.mutate,
+    checklistItemToTask: checklistItemToTask.mutateAsync,
     addRelationship: addRelationship.mutate,
     removeRelationship: removeRelationship.mutate,
     addDependency: addDependency.mutate,

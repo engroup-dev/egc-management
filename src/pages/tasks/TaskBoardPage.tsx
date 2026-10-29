@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
-import { FileStack, Copy, ChevronRight, List, ChartGantt, Workflow, SquareKanban } from "lucide-react";
+import { FileStack, ChevronRight, List, ChartGantt, Workflow, SquareKanban } from "lucide-react";
 import { useTaskBoard } from "../../hooks/tasks/useTaskBoard";
 import TaskTable from "../../components/tasks/board/TaskTable";
 import BoardSwitcher from "../../components/tasks/board/BoardSwitcher";
@@ -8,7 +8,9 @@ import TaskGantt from "../../components/tasks/gantt/TaskGantt";
 import TaskFlow from "../../components/tasks/flow/TaskFlow";
 import TaskTypeBoard from "../../components/tasks/kanban/TaskTypeBoard";
 import TemplatePickerModal from "../../components/tasks/templates/TemplatePickerModal";
-import ZoneCloneModal from "../../components/tasks/clone/ZoneCloneModal";
+import ZoneBar from "../../components/tasks/zones/ZoneBar";
+import ImportTasksDialog from "../../components/tasks/zones/ImportTasksDialog";
+import CopyToZonesDialog from "../../components/tasks/zones/CopyToZonesDialog";
 import { TemplateModeProvider } from "../../components/tasks/TemplateModeContext";
 import { TemplateRolesProvider } from "../../components/tasks/TemplateRolesContext";
 import { useTaskRoles } from "../../hooks/tasks/useTaskRoles";
@@ -16,7 +18,9 @@ import TemplateSyncBanner from "../../components/tasks/templates/TemplateSyncBan
 import PushToBoardsModal from "../../components/tasks/templates/PushToBoardsModal";
 import TemplateChangesModal from "../../components/tasks/templates/TemplateChangesModal";
 import { useTemplateSyncActions, useTemplateSyncStatus } from "../../hooks/tasks/useTemplateSync";
-import { NO_CAPS, useMyTaskAccess, useSpaceCaps } from "../../hooks/tasks/useTaskAccess";
+import { NO_CAPS, taskRowCaps, useMyTaskAccess, useSpaceCaps } from "../../hooks/tasks/useTaskAccess";
+import { HIGHLIGHT_FILL, useFlowState } from "../../hooks/tasks/useFlowState";
+import { archiveTasks } from "../../hooks/tasks/taskArchive";
 import { BoardAccessProvider } from "../../components/tasks/BoardAccessContext";
 import { TaskListPageSkeleton } from "../../components/tasks/TasksSkeletons";
 import { useCreateTaskDialog } from "../../components/tasks/schedule/CreateTaskDialogContext";
@@ -55,6 +59,7 @@ export default function TaskBoardPage({ view }: { view: BoardView }) {
     updateStatus,
     updateTaskType,
     updatePriority,
+    updateTitle,
     updateStartDate,
     updateDueDate,
     updateTaskDates,
@@ -74,9 +79,13 @@ export default function TaskBoardPage({ view }: { view: BoardView }) {
     moveTaskTo,
   } = useTaskBoard(boardId);
   const { openCreateTask } = useCreateTaskDialog();
-  const { link, unlink, reverse } = useDependencyEdit(boardId);
+  const { link, unlink, reverse, setLinkType } = useDependencyEdit(boardId);
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
-  const [showZoneClone, setShowZoneClone] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  // "نسخ إلى مناطق أخرى": the tasks the dialog copies.
+  const [copyTaskIds, setCopyTaskIds] = useState<string[] | null>(null);
+  // The free diagram's shared layout + the tasks' highlight colours (every view shows them).
+  const flowState = useFlowState(boardId, data?.tasks.map((t) => t.id) ?? []);
   // Template push (useTemplateSync.ts): the task ids the dialog opens with.
   const [pushTaskIds, setPushTaskIds] = useState<string[] | null>(null);
   const [reviewingChanges, setReviewingChanges] = useState(false);
@@ -111,6 +120,18 @@ export default function TaskBoardPage({ view }: { view: BoardView }) {
   }
 
   const isTemplate = data.board.is_template;
+  // Per task: an assignee may edit their own task even without space rights.
+  const canEditTask = (taskId: string) =>
+    taskRowCaps(spaceCaps, access?.assignee_caps, !!userId && (data.assigneesByTask.get(taskId) ?? []).includes(userId)).edit;
+  const highlightFills = new Map(
+    Array.from(flowState.state.highlights, ([taskId, color]) => [taskId, HIGHLIGHT_FILL[color]]),
+  );
+  const deleteTasks = (taskIds: string[]) => {
+    const titles = taskIds.map((id) => data.tasks.find((t) => t.id === id)?.title ?? "");
+    void archiveTasks(taskIds, taskIds.length > 1 ? `حذف ${taskIds.length} مهام` : `حذف «${titles[0]}»`);
+    const openTaskId = location.pathname.match(/\/task\/([^/]+)$/)?.[1];
+    if (openTaskId && taskIds.includes(openTaskId)) navigate(location.pathname.replace(/\/task\/[^/]+$/, ""));
+  };
   // A task needs a start and working days (a "Day N" on a template): always
   // the create dialog.
   const addTask = (title: string, parentTaskId: string | null) =>
@@ -172,15 +193,6 @@ export default function TaskBoardPage({ view }: { view: BoardView }) {
               </Link>
             ))}
           </div>
-          {!isTemplate && spaceCaps.create && (
-            <button
-              onClick={() => setShowZoneClone(true)}
-              className="flex items-center gap-1.5 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50"
-            >
-              <Copy className="h-3.5 w-3.5" />
-              استنساخ منطقة
-            </button>
-          )}
           {spaceCaps.create && (
           <button
             onClick={() => setShowTemplatePicker(true)}
@@ -192,6 +204,19 @@ export default function TaskBoardPage({ view }: { view: BoardView }) {
           )}
         </div>
       </div>
+
+      {!isTemplate && (
+        <ZoneBar
+          spaceId={data.board.space_id}
+          projectId={data.projectId}
+          currentBoardId={data.board.id}
+          view={view}
+          canCreate={spaceCaps.create}
+          canEdit={spaceCaps.edit}
+          currentRootTaskIds={data.tasks.filter((t) => !t.parent_task_id).map((t) => t.id)}
+          onImport={() => setShowImport(true)}
+        />
+      )}
 
       {(pendingTaskIds.length > 0 || changedCount > 0 || removedCount > 0) && (
         <TemplateSyncBanner
@@ -218,13 +243,38 @@ export default function TaskBoardPage({ view }: { view: BoardView }) {
             onLink={(pair) => link(pair)}
             onUnlink={(pair) => unlink([pair])}
             onReverseLink={(pair) => reverse(pair)}
+            onChangeLinkType={(pair, linkType) => setLinkType({ pair, linkType })}
             onAddAfter={
               spaceCaps.create
-                ? (taskId, parentTaskId) => openCreateTask({ boardId: data.board.id, parentTaskId, anchorTaskId: taskId })
+                ? (taskId, parentTaskId) =>
+                    openCreateTask({
+                      boardId: data.board.id,
+                      parentTaskId,
+                      // "after" needs a scheduled task; an unscheduled one just gives the parent
+                      anchorTaskId: data.tasks.find((t) => t.id === taskId)?.start_date ? taskId : undefined,
+                    })
                 : undefined
             }
             onAddTask={spaceCaps.create ? (parentTaskId) => addTask("", parentTaskId) : undefined}
-            readOnly={!spaceCaps.edit}
+            readOnly={!spaceCaps.edit && !boardTasks.some((t) => canEditTask(t.id))}
+            canEditTask={canEditTask}
+            flow={{
+              state: flowState.state,
+              canEditLayout: spaceCaps.edit,
+              onSavePositions: (moved, seed) => flowState.savePositions({ moved, seed }),
+              onSetMode: (mode, seed) => flowState.setMode({ mode, seed }),
+              onSetKeepAfterBlockers: flowState.setKeepAfterBlockers,
+              onSetHighlight: (taskIds, color) => flowState.setHighlight({ taskIds, color }),
+              onClearHighlights: () => flowState.clearHighlights(),
+              onTaskToItem: (taskId, targetId, title) => flowState.taskToItem({ taskId, targetId, title }),
+              onItemToTask: (item) => flowState.itemToTask({ item }),
+              onToggleItem: (itemId, checked) => flowState.toggleItem({ itemId, checked }),
+            }}
+            onRenameTask={(taskId, title) => updateTitle({ taskId, title })}
+            onChangeDays={(taskId, days) => updateDuration({ taskId, days })}
+            onDeleteTasks={deleteTasks}
+            onCopyToZones={!isTemplate && spaceCaps.create ? setCopyTaskIds : undefined}
+            storageKey={data.board.id}
           />
         ) : view === "types" ? (
           <TaskTypeBoard
@@ -238,11 +288,13 @@ export default function TaskBoardPage({ view }: { view: BoardView }) {
             onOpenTask={(taskId) => navigate(`/tasks/board/${data.board.id}/types/task/${taskId}`)}
             onChangeTaskType={(taskId, taskTypeId) => updateTaskType({ taskId, taskTypeId })}
             canAddType={!!access?.edit_all}
+            highlights={highlightFills}
           />
         ) : view === "gantt" ? (
           <TaskGantt
             key={boardId}
             tasks={boardTasks}
+            highlights={highlightFills}
             onOpenTask={(taskId) => navigate(`/tasks/board/${data.board.id}/gantt/task/${taskId}`)}
             statuses={data.statuses}
             taskTypes={data.taskTypes}
@@ -291,6 +343,7 @@ export default function TaskBoardPage({ view }: { view: BoardView }) {
             onChangeLag={(taskId, lagDays) => updateLag({ taskId, lagDays })}
             onChangeAssignees={(taskId, userIds) => setAssignees({ taskId, userIds })}
             onCreateTask={addTask}
+            onRenameTask={(taskId, title) => updateTitle({ taskId, title })}
             onChangeValue={(taskId, fieldDefinitionId, value) => setTaskValue({ taskId, fieldDefinitionId, value })}
             onAttachField={attachField}
             onCreateAndAttachField={createAndAttachField}
@@ -311,6 +364,7 @@ export default function TaskBoardPage({ view }: { view: BoardView }) {
               }
             }}
             onPushSelected={canPush && spaceCaps.edit ? setPushTaskIds : undefined}
+            onCopySelectedToZones={!isTemplate && spaceCaps.create && data.board.zone_id ? setCopyTaskIds : undefined}
           />
         )}
       </div>
@@ -345,12 +399,27 @@ export default function TaskBoardPage({ view }: { view: BoardView }) {
         <TemplateChangesModal templateBoardId={data.board.id} onClose={() => setReviewingChanges(false)} />
       )}
 
-      {showZoneClone && (
-        <ZoneCloneModal
+      {showImport && (
+        <ImportTasksDialog
           spaceId={data.board.space_id}
-          currentBoardId={data.board.id}
-          onClose={() => setShowZoneClone(false)}
-          onApplied={() => setShowZoneClone(false)}
+          targetBoardId={data.board.id}
+          targetZoneName={data.zoneName ?? data.board.name}
+          targetTasks={data.tasks}
+          onClose={() => setShowImport(false)}
+        />
+      )}
+
+      {copyTaskIds && copyTaskIds.length > 0 && (
+        <CopyToZonesDialog
+          spaceId={data.board.space_id}
+          sourceBoardId={data.board.id}
+          taskIds={copyTaskIds}
+          label={
+            copyTaskIds.length === 1
+              ? (data.tasks.find((t) => t.id === copyTaskIds[0])?.title ?? "")
+              : `${copyTaskIds.length} مهام`
+          }
+          onClose={() => setCopyTaskIds(null)}
         />
       )}
     </div>

@@ -4,6 +4,7 @@ import { supabase } from "../../lib/supabaseClient";
 import type { Json } from "../../lib/supabase";
 import type { TaskRow } from "./useTaskBoard";
 import { emitLinkedNotice, emitScheduleNotice, recordTaskPatch, type TaskPatch } from "./taskUndo";
+import { recordCreated } from "./taskArchive";
 
 // =====================================================================
 // Task scheduling (tasks/migrations/2026-10-13_task_scheduling_a.sql)
@@ -46,6 +47,10 @@ export interface ScheduleMove {
   new_start: string;
   new_due: string;
   shift_days: number;
+  /** The board / zone it is on: a change can move tasks in every zone of the space. */
+  board_id?: string;
+  board_name?: string;
+  zone_name?: string | null;
 }
 
 export interface ScheduleResult {
@@ -150,12 +155,21 @@ function recordScheduleUndo(prev: ScheduleTaskRef, change: ScheduleChange, saved
 }
 
 /** Every cached view a schedule change can touch: dates move across the board. */
+// Every board, not only the edited one: the zones of a space are scheduled
+// together, so a change on one board can move tasks on the others.
 export function invalidateSchedule(queryClient: QueryClient, boardId?: string | null) {
-  queryClient.invalidateQueries({ queryKey: boardId ? ["task-board", boardId] : ["task-board"] });
-  queryClient.invalidateQueries({ queryKey: boardId ? ["board-schedule", boardId] : ["board-schedule"] });
+  queryClient.invalidateQueries({ queryKey: ["task-board"] });
+  queryClient.invalidateQueries({ queryKey: ["board-schedule"] });
   queryClient.invalidateQueries({ queryKey: ["task-detail"] });
   queryClient.invalidateQueries({ queryKey: ["task-directory"] });
+  queryClient.invalidateQueries({ queryKey: ["space-zones"] });
+  queryClient.invalidateQueries({ queryKey: ["zone-chain-groups"] });
   if (boardId) queryClient.invalidateQueries({ queryKey: ["template-sync", boardId] });
+}
+
+/** How many boards (zones) a change moved tasks on. */
+export function movedBoardCount(moved: ScheduleMove[]): number {
+  return new Set(moved.map((m) => m.board_id).filter(Boolean)).size;
 }
 
 /**
@@ -167,7 +181,7 @@ export async function saveTaskSchedule(prev: ScheduleTaskRef, change: ScheduleCh
   const result = await callUpdate(prev.id, change);
   recordScheduleUndo(prev, change, result.task);
   if (result.linked_after) emitLinkedNotice(result.linked_after.title);
-  else emitScheduleNotice(result.moved.length, result.board_end_after);
+  else emitScheduleNotice(result.moved.length, result.board_end_after, movedBoardCount(result.moved));
   return result;
 }
 
@@ -182,8 +196,13 @@ export function useUpdateTaskSchedule(boardId?: string | null) {
 export function useCreateScheduledTask() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateScheduledTaskInput) => callCreate(input, false),
-    onSuccess: (result) => emitScheduleNotice(result.moved.length, result.board_end_after),
+    mutationFn: async (input: CreateScheduledTaskInput) => {
+      const result = await callCreate(input, false);
+      // Ctrl+Z archives it again (taskArchive.ts)
+      recordCreated(result.task.id, result.task.title);
+      return result;
+    },
+    onSuccess: (result) => emitScheduleNotice(result.moved.length, result.board_end_after, movedBoardCount(result.moved)),
     onSettled: (_data, _error, input) => {
       invalidateSchedule(queryClient, input.boardId);
       if (input.parentTaskId) queryClient.invalidateQueries({ queryKey: ["task-detail", input.parentTaskId] });

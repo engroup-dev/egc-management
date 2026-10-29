@@ -10,6 +10,7 @@ import { DEFAULT_FEATURE_SETTINGS, type SpaceFeatureSettings } from "./useSpaceS
 import { emitTaskError } from "./taskErrorBus";
 import { extractErrorMessage } from "./extractErrorMessage";
 import { topmostTaskIds, withDescendants } from "./bulkSelection";
+import { archiveTasks } from "./taskArchive";
 import { recordAssignees, recordTaskPatch, recordTaskPatches, recordTaskValue } from "./taskUndo";
 import { invalidateSchedule, saveTaskSchedule, type ScheduleChange } from "./useTaskSchedule";
 import { dueFromDays, workingDayOnOrAfterString } from "../../components/tasks/board/workingDays";
@@ -56,10 +57,17 @@ export interface TaskTypeLite {
   color: string | null;
 }
 
+/** fs: starts the working day after the other ends; ss: starts with it. */
+export type LinkType = "fs" | "ss";
+
 /** One task_dependencies edge, read from either end. */
 export interface DependencyPair {
   blocking_task_id: string;
   blocked_task_id: string;
+  /** Missing = "fs" (a new link is finish -> start unless asked). */
+  link_type?: LinkType;
+  /** Made by "chain zones" (the same task in the next zone). */
+  zone_chain?: boolean;
 }
 
 export interface TagLite {
@@ -86,7 +94,7 @@ export interface TaskBoardData {
   /** Per task: what it waits on, what waits on it, or "cleared" once
    * everything it waited on is done — the row's stop / "!" / check icons. */
   dependencyFlags: Map<string, DependencyFlags>;
-  /** Every link of each task, both directions — the "تبدأ بعد" column and its popover. */
+  /** Every link of each task, both directions — the row's link icons and their popover. */
   dependencyLinks: Map<string, TaskLinks>;
   // The edges whose waiting side is on this board (the other side may be
   // on another board). The Gantt view draws an arrow for each edge whose
@@ -554,8 +562,8 @@ export function useTaskBoard(boardId: string | undefined) {
       const allTasks = query.data?.tasks ?? [];
       const roots = topmostTaskIds(allTasks, new Set(taskIds));
       if (roots.length === 0) return new Set();
-      const { error } = await tasksDb.from("tasks").delete().in("id", roots);
-      if (error) throw error;
+      // archived, not deleted: Ctrl+Z brings them back
+      await archiveTasks(roots, roots.length > 1 ? `حذف ${roots.length} مهام` : "حذف مهمة");
       return withDescendants(allTasks, roots);
     },
     onSuccess: (deletedIds) => {
@@ -592,6 +600,19 @@ export function useTaskBoard(boardId: string | undefined) {
         .eq("id", taskId);
       if (error) throw error;
       if (prevTask) recordTaskPatch("تغيير الأولوية", taskId, { priority: prevTask.priority }, { priority });
+    },
+    onSuccess: invalidate,
+  });
+
+  // The title, edited inline (the list row, the diagram's edit bar).
+  const updateTitle = useMutation({
+    mutationFn: async ({ taskId, title }: { taskId: string; title: string }) => {
+      const next = title.trim();
+      const prevTask = query.data?.tasks.find((t) => t.id === taskId);
+      if (!next || next === prevTask?.title) return;
+      const { error } = await tasksDb.from("tasks").update({ title: next }).eq("id", taskId);
+      if (error) throw error;
+      if (prevTask) recordTaskPatch("تغيير اسم المهمة", taskId, { title: prevTask.title }, { title: next });
     },
     onSuccess: invalidate,
   });
@@ -881,6 +902,7 @@ export function useTaskBoard(boardId: string | undefined) {
     updateStatus: updateStatus.mutate,
     updateTaskType: updateTaskType.mutate,
     updatePriority: updatePriority.mutate,
+    updateTitle: updateTitle.mutate,
     updateDueDate: updateDueDate.mutate,
     updateStartDate: updateStartDate.mutate,
     updateTaskDates: updateTaskDates.mutate,

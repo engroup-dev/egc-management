@@ -176,6 +176,8 @@ export interface GanttGroup {
 
 interface TaskGanttProps {
   tasks: TaskRow[];
+  /** Highlight colour fills (the diagram's 🖍️), by task. */
+  highlights?: Map<string, string>;
   statuses: StatusRow[];
   taskTypes: Map<string, TaskTypeLite>;
   dependencies: DependencyPair[];
@@ -213,6 +215,7 @@ const isFinished = (category: string | undefined) => category === "done" || cate
 
 export default function TaskGantt({
   tasks,
+  highlights,
   statuses,
   taskTypes,
   dependencies,
@@ -988,6 +991,7 @@ export default function TaskGantt({
                         subtitle={subtitle}
                         describe={describe}
                         color={status?.color ?? DEFAULT_STATUS_COLOR}
+                        highlight={highlights?.get(task.id) ?? null}
                         done={isFinished(status?.category)}
                         overdue={task.is_overdue}
                         dependency={dependencyFlags.get(task.id)}

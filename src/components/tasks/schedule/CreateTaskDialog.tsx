@@ -19,6 +19,11 @@ import {
   workingDaysLabel,
 } from "../board/workingDays";
 import { dateToDayOffset, dayOffsetLabel, dayOffsetToDate } from "../board/templateDates";
+import { supabase } from "../../../lib/supabaseClient";
+import { useAuth } from "../../../hooks/useAuth";
+import { useAssignablePeople } from "../../../hooks/tasks/useAssignablePeople";
+import { useTaskTypeOptions } from "../../../hooks/tasks/useTaskTypeOptions";
+import { emitTaskError } from "../../../hooks/tasks/taskErrorBus";
 
 // The one way to add a task to any board, a template included: a task needs
 // a start and the number of working days it takes, and usually follows
@@ -92,6 +97,12 @@ export default function CreateTaskDialog({ boardId, parentTaskId = null, title: 
   const [anchorSearch, setAnchorSearch] = useState("");
   const [openPicker, setOpenPicker] = useState<"start" | "due" | null>(null);
   const [initialized, setInitialized] = useState(false);
+  // optional, set right after the task is created
+  const [taskTypeId, setTaskTypeId] = useState("");
+  const [assigneeId, setAssigneeId] = useState("");
+  const taskTypes = useTaskTypeOptions();
+  const people = useAssignablePeople();
+  const { user } = useAuth();
   const titleRef = useRef<HTMLInputElement>(null);
   const startRef = useRef<HTMLButtonElement>(null);
   const dueRef = useRef<HTMLButtonElement>(null);
@@ -192,6 +203,15 @@ export default function CreateTaskDialog({ boardId, parentTaskId = null, title: 
     try {
       const result = await create.mutateAsync({ ...input, title: title.trim() });
       if (!parentTaskId) savePlacement(boardId, placement);
+      // type and assignee: plain writes on the new task (the RPC only schedules)
+      const tasksDb = supabase.schema("tasks");
+      const extras: PromiseLike<{ error: unknown }>[] = [];
+      if (taskTypeId) extras.push(tasksDb.from("tasks").update({ task_type_id: taskTypeId }).eq("id", result.task.id));
+      if (assigneeId && !plain)
+        extras.push(
+          tasksDb.from("task_assignees").insert({ task_id: result.task.id, user_id: assigneeId, assigned_by: user?.id ?? null }),
+        );
+      for (const { error } of await Promise.all(extras)) if (error) emitTaskError(extractErrorMessage(error));
       if (!addAnother) {
         onClose();
         return;
@@ -487,6 +507,48 @@ export default function CreateTaskDialog({ boardId, parentTaskId = null, title: 
                 />
               )}
             </div>
+          </div>
+
+          <div className={`grid gap-3 ${plain ? "grid-cols-1" : "grid-cols-2"}`}>
+            <div>
+              <label htmlFor="new-task-type" className="mb-1 block text-xs font-semibold text-gray-500">
+                النوع <span className="font-normal text-gray-400">(اختياري)</span>
+              </label>
+              <select
+                id="new-task-type"
+                value={taskTypeId}
+                onChange={(e) => setTaskTypeId(e.target.value)}
+                className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary"
+              >
+                <option value="">الافتراضي</option>
+                {taskTypes.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name_ar}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {!plain && (
+              <div>
+                <label htmlFor="new-task-assignee" className="mb-1 block text-xs font-semibold text-gray-500">
+                  المسؤول <span className="font-normal text-gray-400">(اختياري)</span>
+                </label>
+                <select
+                  id="new-task-assignee"
+                  value={assigneeId}
+                  onChange={(e) => setAssigneeId(e.target.value)}
+                  className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary"
+                >
+                  <option value="">بدون مسؤول</option>
+                  {people.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {[p.first_name, p.last_name].filter(Boolean).join(" ")}
+                      {p.person_type === "contractor" ? " (مقاول)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           {willBecomeSummary && parent && (

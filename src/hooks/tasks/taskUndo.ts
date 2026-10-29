@@ -24,8 +24,10 @@ import { invalidateTaskAccess } from "./useTaskAccess";
 // is skipped rather than overwritten.
 //
 // Covered: field edits on tasks, assignees, custom values, drag-reorder,
-// dependency links, and the bulk versions of those. NOT covered: create,
-// delete, comments, checklists, relationships, column/field config.
+// dependency links, and the bulk versions of those; through recordAction,
+// create and delete (both archive / restore), diagram moves, highlight
+// colours, link types and task <-> checklist item. NOT covered: comments,
+// checklist edits, relationships, column/field config.
 
 const MAX_ENTRIES = 50;
 
@@ -68,10 +70,12 @@ export type UndoNotice =
   | { kind: "stale"; label: string }
   | { kind: "empty"; direction: "undo" | "redo" }
   // A schedule edit moved other tasks along the chain (useTaskSchedule.ts).
-  | { kind: "schedule"; moved: number; boardEnd: string | null }
+  | { kind: "schedule"; moved: number; boardEnd: string | null; boards: number }
   // Days typed on a task with no start: it was linked after the task that
   // ends latest (tasks.update_task_schedule).
-  | { kind: "linked"; title: string };
+  | { kind: "linked"; title: string }
+  // Something undoable just happened (a delete, a box turned into an item).
+  | { kind: "done"; text: string };
 
 type NoticeListener = (notice: UndoNotice) => void;
 let noticeListener: NoticeListener | null = null;
@@ -80,8 +84,12 @@ export function setUndoNoticeListener(next: NoticeListener | null): void {
   noticeListener = next;
 }
 
-export function emitScheduleNotice(moved: number, boardEnd: string | null): void {
-  if (moved > 0) noticeListener?.({ kind: "schedule", moved, boardEnd });
+export function emitScheduleNotice(moved: number, boardEnd: string | null, boards = 1): void {
+  if (moved > 0) noticeListener?.({ kind: "schedule", moved, boardEnd, boards });
+}
+
+export function emitDoneNotice(text: string): void {
+  noticeListener?.({ kind: "done", text });
 }
 
 export function emitLinkedNotice(title: string): void {
@@ -118,7 +126,8 @@ export async function runUndoRedo(queryClient: QueryClient, direction: "undo" | 
     }
   } finally {
     busy = false;
-    for (const key of ["task-board", "task-directory", "task-detail", "tasks-sidebar", "template-sync"]) {
+    for (const key of ["task-board", "task-directory", "task-detail", "tasks-sidebar", "template-sync",
+                       "space-zones", "zone-chain-groups", "flow-state"]) {
       queryClient.invalidateQueries({ queryKey: [key] });
     }
     invalidateTaskAccess(queryClient);
@@ -349,6 +358,22 @@ export function recordDependencySwap(label: string, actorId: string | null, remo
     label,
     undo: () => swap(added, removed),
     redo: () => swap(removed, added),
+  });
+}
+
+/** Any other change: `undo` / `redo` put it back and forth, and throw when
+ * they can't (the error is shown, the entry stays). */
+export function recordAction(label: string, undo: () => Promise<void>, redo: () => Promise<void>) {
+  pushUndo({
+    label,
+    undo: async () => {
+      await undo();
+      return { applied: 1, skipped: 0 };
+    },
+    redo: async () => {
+      await redo();
+      return { applied: 1, skipped: 0 };
+    },
   });
 }
 

@@ -24,11 +24,13 @@ function describe(notice: UndoNotice): { text: string; icon: "undo" | "redo" | "
       return { text: notice.direction === "undo" ? "لا يوجد ما يمكن التراجع عنه" : "لا يوجد ما يمكن إعادته", icon: "info" };
     case "linked":
       return { text: `تبدأ بعد «${notice.title}» — رُبطت بها`, icon: "schedule" };
+    case "done":
+      return { text: `${notice.text} — Ctrl+Z للتراجع`, icon: "info" };
     case "schedule":
       return {
         text: `تم ترحيل ${notice.moved === 1 ? "مهمة واحدة" : `${notice.moved} مهام`}${
-          notice.boardEnd ? ` · نهاية اللوحة ${formatDayWithWeekday(notice.boardEnd)}` : ""
-        }`,
+          notice.boards > 1 ? ` في ${notice.boards} مناطق` : ""
+        }${notice.boardEnd ? ` · نهاية اللوحة ${formatDayWithWeekday(notice.boardEnd)}` : ""}`,
         icon: "schedule",
       };
   }

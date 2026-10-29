@@ -34,6 +34,11 @@ export interface LinkRef {
   done: boolean;
   /** On another board than the task it is listed under. */
   otherBoard: boolean;
+  /** The board it is on. */
+  boardId: string;
+  linkType: "fs" | "ss";
+  /** Made by "chain zones". */
+  zoneChain: boolean;
 }
 
 /** Every link of one task (archived ends left out), for editing them. */
@@ -54,6 +59,8 @@ export interface DependencyFlagsResult {
 }
 
 const isFinished = (category: string | undefined) => category === "done" || category === "closed";
+
+const LINK_COLUMNS = "blocked_task_id, blocking_task_id, link_type, zone_chain";
 
 /**
  * @param taskIds the tasks being shown
@@ -76,18 +83,18 @@ export async function loadDependencyFlags(
   if (!taskIds.length) return empty;
 
   const [waitingResult, holdingResult] = await Promise.all([
-    tasksDb.from("task_dependencies").select("blocked_task_id, blocking_task_id").in("blocked_task_id", taskIds),
-    tasksDb.from("task_dependencies").select("blocked_task_id, blocking_task_id").in("blocking_task_id", taskIds),
+    tasksDb.from("task_dependencies").select(LINK_COLUMNS).in("blocked_task_id", taskIds),
+    tasksDb.from("task_dependencies").select(LINK_COLUMNS).in("blocking_task_id", taskIds),
   ]);
   if (waitingResult.error) throw waitingResult.error;
   if (holdingResult.error) throw holdingResult.error;
 
-  const dependencies = waitingResult.data ?? [];
+  const dependencies = (waitingResult.data ?? []) as DependencyPair[];
   const shown = new Set(taskIds);
   // a link between two shown tasks comes back from both queries
   const edges = [
     ...dependencies,
-    ...(holdingResult.data ?? []).filter((d) => !shown.has(d.blocked_task_id)),
+    ...((holdingResult.data ?? []) as DependencyPair[]).filter((d) => !shown.has(d.blocked_task_id)),
   ];
   if (!edges.length) return { ...empty, dependencies };
 
@@ -131,11 +138,14 @@ export async function loadDependencyFlags(
     }
     return links;
   };
-  const refTo = (other: DependencyTaskInfo, from: DependencyTaskInfo): LinkRef => ({
+  const refTo = (other: DependencyTaskInfo, from: DependencyTaskInfo, d: DependencyPair): LinkRef => ({
     taskId: other.id,
     title: other.title,
     done: isFinished(categories.get(other.status_id)),
     otherBoard: other.board_id !== from.board_id,
+    boardId: other.board_id,
+    linkType: d.link_type ?? "fs",
+    zoneChain: !!d.zone_chain,
   });
 
   const waitedOnSomething = new Set<string>();
@@ -143,8 +153,8 @@ export async function loadDependencyFlags(
     const blocking = taskById.get(d.blocking_task_id);
     const blocked = taskById.get(d.blocked_task_id);
     if (!blocking || !blocked || blocking.is_archived || blocked.is_archived) continue;
-    if (shown.has(blocked.id)) linksOf(blocked.id).waitsFor.push(refTo(blocking, blocked));
-    if (shown.has(blocking.id)) linksOf(blocking.id).waitedBy.push(refTo(blocked, blocking));
+    if (shown.has(blocked.id)) linksOf(blocked.id).waitsFor.push(refTo(blocking, blocked, d));
+    if (shown.has(blocking.id)) linksOf(blocking.id).waitedBy.push(refTo(blocked, blocking, d));
     if (shown.has(blocked.id)) waitedOnSomething.add(blocked.id);
     if (isFinished(categories.get(blocking.status_id))) continue;
     if (shown.has(blocked.id)) flagsOf(blocked.id).waitingOn.push(blocking.title);

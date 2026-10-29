@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { X, Loader2, ChevronLeft, Trash2, Plus } from "lucide-react";
+import { X, Loader2, ChevronLeft, Trash2, Plus, CopyPlus } from "lucide-react";
 import { useTaskDetail } from "../../../hooks/tasks/useTaskDetail";
 import { colorFor, initials } from "../board/employeeAvatar";
 import { useMyTaskAccess, useTaskCaps } from "../../../hooks/tasks/useTaskAccess";
@@ -32,6 +32,10 @@ import RecurrenceSection from "./RecurrenceSection";
 import MentionTextarea from "./MentionTextarea";
 import { TemplateModeProvider } from "../TemplateModeContext";
 import { TaskDetailSkeleton } from "../TasksSkeletons";
+import ConfirmDialog from "../../ui/ConfirmDialog";
+import CopyToZonesDialog from "../zones/CopyToZonesDialog";
+import { useSpaceZones } from "../../../hooks/tasks/useZones";
+import { useTaskTypeOptions } from "../../../hooks/tasks/useTaskTypeOptions";
 
 // =====================================================================
 // D3 — Task detail (slide-over panel), build plan Part 7.
@@ -115,6 +119,9 @@ export default function TaskDetailPanel() {
     addChecklist,
     addChecklistItem,
     toggleChecklistItem,
+    renameChecklistItem,
+    deleteChecklistItem,
+    checklistItemToTask,
     addRelationship,
     removeRelationship,
     addDependency,
@@ -150,15 +157,17 @@ export default function TaskDetailPanel() {
   const [titleDraft, setTitleDraft] = useState<string | null>(null);
   const [descriptionDraft, setDescriptionDraft] = useState<string | null>(null);
 
+  // Delete archives the task (and its subtasks): Ctrl+Z brings it back.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const handleDelete = async () => {
-    if (!data) return;
-    const warning = data.subtasks.length
-      ? `حذف "${data.task.title}" و${data.subtasks.length} مهمة فرعية تحتها نهائياً؟ لا يمكن التراجع عن هذا.`
-      : `حذف "${data.task.title}" نهائياً؟ لا يمكن التراجع عن هذا.`;
-    if (!confirm(warning)) return;
+    setConfirmingDelete(false);
     await deleteTask();
     navigate(basePath);
   };
+  const [copyingToZones, setCopyingToZones] = useState(false);
+  const { zones } = useSpaceZones(data?.task.is_template ? undefined : data?.breadcrumb.spaceId);
+  const inZone = !!data && zones.length > 1 && zones.some((z) => z.boardId === data.breadcrumb.boardId);
+  const taskTypes = useTaskTypeOptions(!!data);
 
   // Slides in from the left edge on open and back out on close. Opening a
   // different task from inside the panel (breadcrumb, subtasks) keeps this
@@ -246,6 +255,16 @@ export default function TaskDetailPanel() {
               className="w-full border-none text-lg font-semibold text-gray-900 outline-none"
             />
 
+            {inZone && caps.create && (
+              <button
+                onClick={() => setCopyingToZones(true)}
+                className="mt-1 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-gray-500 hover:bg-gray-50 hover:text-primary"
+              >
+                <CopyPlus className="h-3.5 w-3.5" />
+                نسخ إلى مناطق أخرى
+              </button>
+            )}
+
             <div className="mt-1.5">
               <EditGuard disabled={!caps.edit}>
                 <TagPicker
@@ -309,6 +328,20 @@ export default function TaskDetailPanel() {
                   align="left"
                   readOnly={!caps.status}
                 />
+              </FieldRow>
+              <FieldRow label="النوع">
+                <select
+                  value={data.task.task_type_id}
+                  disabled={!caps.edit}
+                  onChange={(e) => updateField({ task_type_id: e.target.value })}
+                  className="rounded-md border border-gray-200 px-2 py-1 text-sm outline-none"
+                >
+                  {taskTypes.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name_ar}
+                    </option>
+                  ))}
+                </select>
               </FieldRow>
               <FieldRow label="الأولوية">
                 <PriorityCell
@@ -537,6 +570,13 @@ export default function TaskDetailPanel() {
                 onAddChecklist={(name) => addChecklist(name)}
                 onAddItem={(checklistId, content) => addChecklistItem({ checklistId, content })}
                 onToggleItem={(itemId, checked) => toggleChecklistItem({ itemId, checked })}
+                onRenameItem={(itemId, content) => renameChecklistItem({ itemId, content })}
+                onDeleteItem={(itemId) => deleteChecklistItem(itemId)}
+                onItemToTask={
+                  data.task.is_template
+                    ? undefined
+                    : (itemId) => void checklistItemToTask(itemId).then((id) => navigate(`${basePath}/task/${id}`))
+                }
                 canEdit={caps.edit}
                 canTick={caps.status}
               />
@@ -581,7 +621,7 @@ export default function TaskDetailPanel() {
             <Section title="منطقة الخطر" hidden={!caps.delete}>
               <div className="rounded-md border border-red-100 bg-red-50/50 p-3">
                 <button
-                  onClick={handleDelete}
+                  onClick={() => setConfirmingDelete(true)}
                   disabled={deletingTask}
                   className="flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
                 >
@@ -590,18 +630,40 @@ export default function TaskDetailPanel() {
                   ) : (
                     <Trash2 className="h-3.5 w-3.5" />
                   )}
-                  حذف المهمة نهائياً
+                  حذف المهمة
                 </button>
-                {data.subtasks.length > 0 && (
-                  <p className="mt-1 text-xs text-red-400">
-                    سيتم حذف {data.subtasks.length} مهمة فرعية تحتها أيضاً.
-                  </p>
-                )}
+                <p className="mt-1 text-xs text-red-400">
+                  {data.subtasks.length > 0 ? `تُحذف معها ${data.subtasks.length} مهمة فرعية. ` : ""}
+                  يمكن التراجع بـ Ctrl+Z.
+                </p>
               </div>
             </Section>
           </div>
         )}
       </div>
+      {data && (
+        <ConfirmDialog
+          open={confirmingDelete}
+          onConfirm={() => void handleDelete()}
+          onCancel={() => setConfirmingDelete(false)}
+          title="حذف المهمة؟"
+          message={`حذف «${data.task.title}»${
+            data.subtasks.length ? ` و${data.subtasks.length} مهمة فرعية تحتها` : ""
+          }؟ يمكن التراجع بـ Ctrl+Z.`}
+          confirmLabel="حذف"
+          confirmVariant="error"
+          loading={deletingTask}
+        />
+      )}
+      {data && copyingToZones && (
+        <CopyToZonesDialog
+          spaceId={data.breadcrumb.spaceId}
+          sourceBoardId={data.breadcrumb.boardId}
+          taskIds={[data.task.id]}
+          label={data.task.title}
+          onClose={() => setCopyingToZones(false)}
+        />
+      )}
     </div>
     </TemplateModeProvider>
   );
