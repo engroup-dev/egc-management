@@ -36,7 +36,7 @@ export interface UpdateProjectOverviewInput {
 
 // ─── Fetchers (Supabase) ──────────────────────────────────────────────────────
 
-const fetchProjectOverview = async (
+export const fetchProjectOverview = async (
   projectId: string,
 ): Promise<ProjectOverview> => {
   const { data, error } = await supabase
