@@ -410,7 +410,21 @@ export function useRemoveTeamMember() {
         .eq("id", assignmentId);
       if (error) throw error;
     },
-    onSuccess: (_data, variables) => {
+    onMutate: async ({ projectId, assignmentId }: RemoveArgs) => {
+      const key = projectTeamKey(projectId);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<TeamMember[]>(key);
+      queryClient.setQueryData<TeamMember[]>(
+        key,
+        (previous ?? []).filter((m) => m.assignmentId !== assignmentId),
+      );
+      return { previous };
+    },
+    onError: (_err, variables, context) => {
+      if (!context?.previous) return;
+      queryClient.setQueryData(projectTeamKey(variables.projectId), context.previous);
+    },
+    onSettled: (_data, _err, variables) => {
       invalidateRoleHolders(queryClient, variables.projectId);
       // Deliberately does NOT invalidate anything distribution-related.
       // Removing someone from a team has no effect on their percentage,
