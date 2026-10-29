@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabaseClient";
+import { TIERS } from "../../lib/queryClient";
 import type { Json } from "../../lib/supabase";
 import type { TaskRow } from "./useTaskBoard";
 import { emitLinkedNotice, emitScheduleNotice, recordTaskPatch, type TaskPatch } from "./taskUndo";
@@ -233,8 +234,7 @@ export function useCreateTaskPreview(input: CreateScheduledTaskInput | null) {
     queryKey: ["schedule-preview", debouncedKey],
     enabled: !!debouncedKey,
     queryFn: () => callCreate(JSON.parse(debouncedKey as string) as CreateScheduledTaskInput, true),
-    staleTime: 0,
-    gcTime: 30_000,
+    ...TIERS.D,
     retry: false,
   });
   const settled = !!key && debouncedKey === key;

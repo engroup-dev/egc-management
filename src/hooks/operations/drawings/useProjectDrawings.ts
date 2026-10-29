@@ -5,6 +5,7 @@ import {
   filesApiDownload,
   filesApiUpload,
 } from "../../../lib/filesApiClient";
+import { TIERS } from "../../../lib/queryClient";
 import type { Json } from "../../../lib/supabase";
 import { useAuthUserId } from "../../permissions/useCan";
 import type {
@@ -109,7 +110,7 @@ export function useMyDrawingCaps(projectId: string | undefined) {
   return useQuery({
     queryKey: drawingKeys.caps(projectId ?? "", userId),
     enabled: !!projectId && resolved && !!userId,
-    staleTime: 30_000,
+    ...TIERS.E,
     queryFn: async (): Promise<DrawingCaps> => {
       const { data, error } = await drawings().rpc("my_caps", {
         p_project_id: projectId as string,
@@ -225,7 +226,7 @@ export function useDrawingProjectName(projectId: string | undefined, enabled = t
   return useQuery({
     queryKey: drawingKeys.projectName(projectId ?? ""),
     enabled: enabled && !!projectId,
-    staleTime: 5 * 60_000,
+    ...TIERS.A,
     queryFn: async (): Promise<string> => {
       const { data, error } = await supabase
         .from("projects")
@@ -243,6 +244,7 @@ export function useAllMapTypes(enabled = true) {
   return useQuery({
     queryKey: drawingKeys.mapTypes,
     enabled,
+    ...TIERS.A,
     queryFn: async (): Promise<MapType[]> => {
       const { data, error } = await supabase.from("map_types").select("*").order("name");
       if (error) throw toError(error, "تعذر تحميل أنواع الخرائط");

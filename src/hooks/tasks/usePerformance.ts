@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabaseClient";
+import { TIERS } from "../../lib/queryClient";
 
 // =====================================================================
 // Task performance dashboard — data hooks.
@@ -152,7 +153,7 @@ const filterArgs = ({ range, personType, departmentId }: PerformanceFilters) => 
 export function usePerformanceSummary(filters: PerformanceFilters) {
   return useQuery<PerformanceRow[]>({
     queryKey: ["tasks", "performance", "summary", filters.range, filters.personType, filters.departmentId],
-    staleTime: 60_000,
+    ...TIERS.B,
     queryFn: () => call<PerformanceRow>("performance_summary", filterArgs(filters)),
   });
 }
@@ -161,7 +162,7 @@ export function usePerformanceTrend(filters: Omit<PerformanceFilters, "range">) 
   const range = trendRange();
   return useQuery<PerformanceTrendPoint[]>({
     queryKey: ["tasks", "performance", "trend", range.from, filters.personType, filters.departmentId],
-    staleTime: 60_000,
+    ...TIERS.B,
     queryFn: () => call<PerformanceTrendPoint>("performance_trend", filterArgs({ ...filters, range })),
   });
 }
@@ -171,7 +172,7 @@ export function usePerformancePersonTasks(userId: string | null, range: PeriodRa
   return useQuery<PerformanceTaskRow[]>({
     queryKey: ["tasks", "performance", "person-tasks", userId, range],
     enabled: !!userId,
-    staleTime: 60_000,
+    ...TIERS.B,
     queryFn: () =>
       call<PerformanceTaskRow>("performance_person_tasks", {
         p_user_id: userId,
@@ -189,7 +190,7 @@ export interface DepartmentOption {
 export function usePerformanceDepartments() {
   return useQuery<DepartmentOption[]>({
     queryKey: ["tasks", "performance", "departments"],
-    staleTime: 5 * 60_000,
+    ...TIERS.A,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("departments")

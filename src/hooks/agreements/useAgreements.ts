@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { agreementsDb } from "../../lib/agreementsDb";
 import { supabase } from "../../lib/supabaseClient";
 import { uploadFile } from "../../lib/storage-client";
+import { TIERS } from "../../lib/queryClient";
 import { normalizePhone } from "../../utils/agreements/rules";
 import { useAuthUserId } from "../permissions/useCan";
 import type {
@@ -85,7 +86,7 @@ export function usePaymentPreview(agreementId: string | null) {
   return useQuery({
     queryKey: keys.preview(userId ?? "", agreementId ?? ""),
     enabled: !!userId && !!agreementId,
-    staleTime: 0,
+    ...TIERS.C,
     queryFn: async () =>
       (await rpcOrThrow(
         "agreement_payment_preview",
@@ -117,7 +118,7 @@ export function useContractorProjectMoney(projectId: string, contractorId: strin
   return useQuery({
     queryKey: keys.contractorMoney(userId ?? "", projectId, contractorId ?? ""),
     enabled: !!userId && !!projectId && !!contractorId,
-    staleTime: 0,
+    ...TIERS.C,
     queryFn: async () =>
       (await rpcOrThrow(
         "contractor_project_money",

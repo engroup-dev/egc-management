@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabaseClient";
+import { TIERS } from "../../lib/queryClient";
 import type { PeriodRange } from "./usePerformance";
 
 // =====================================================================
@@ -44,7 +45,7 @@ const tasksRpc = () =>
 export function useTaskDashboard(range: PeriodRange) {
   return useQuery<TaskDashboard>({
     queryKey: ["tasks", "dashboard", range.from, range.to],
-    staleTime: 60_000,
+    ...TIERS.B,
     queryFn: async () => {
       const { data, error } = await tasksRpc().rpc("dashboard_summary", { p_from: range.from, p_to: range.to });
       if (error) throw new Error(error.message);

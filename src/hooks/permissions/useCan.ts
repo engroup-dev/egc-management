@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { permissionsDb } from "../../lib/permissionsDb";
 import { supabase } from "../../lib/supabaseClient";
+import { TIERS } from "../../lib/queryClient";
 import type { EffectivePermissionRow } from "../../types/permissions.types";
 
 // =====================================================================
@@ -145,7 +146,7 @@ export function useMyPermissions(projectId?: string): MyPermissionsResult {
   const query = useQuery<Set<string>>({
     queryKey: myPermissionsKey(userId, projectId),
     enabled: !!userId,
-    staleTime: 30_000,
+    ...TIERS.E,
     queryFn: async () => {
       const { data, error } = await permissionsDb.rpc(
         "my_effective_permissions",

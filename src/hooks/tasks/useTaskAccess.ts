@@ -1,5 +1,6 @@
 import { useQuery, type QueryClient } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabaseClient";
+import { TIERS } from "../../lib/queryClient";
 import { useAuthUserId } from "../permissions/useCan";
 
 // =====================================================================
@@ -86,7 +87,7 @@ export function useMyTaskAccess(): {
   const query = useQuery<MyTaskAccess>({
     queryKey: myTaskAccessKey(userId),
     enabled: !!userId,
-    staleTime: 60_000,
+    ...TIERS.B,
     queryFn: async () => {
       const { data, error } = await tasksRpc().rpc("my_access");
       if (error) throw new Error(error.message);
@@ -144,7 +145,7 @@ export function useTaskCaps(taskId: string | undefined): {
   const query = useQuery<TaskCapsRow | null>({
     queryKey: ["tasks", "task-caps", userId ?? "anonymous", taskId],
     enabled: !!userId && !!taskId,
-    staleTime: 30_000,
+    ...TIERS.E,
     queryFn: async () => {
       const { data, error } = await tasksRpc().rpc("task_caps", { p_ids: [taskId] });
       if (error) throw new Error(error.message);

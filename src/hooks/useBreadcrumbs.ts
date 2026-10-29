@@ -1,6 +1,7 @@
 import { useQueries } from "@tanstack/react-query";
 import { matchPath } from "react-router-dom";
 import { BREADCRUMB_ENTITIES } from "../config/navigation/breadcrumbEntities";
+import { TIERS } from "../lib/queryClient";
 
 export interface Crumb {
   path: string;
@@ -150,7 +151,7 @@ export function useBreadcrumbs(pathname: string): Crumb[] {
       queryKey: ["breadcrumb-label", s.entity, s.value],
       queryFn: () => BREADCRUMB_ENTITIES[s.entity].resolve(s.value),
       enabled: s.entity >= 0,
-      staleTime: 5 * 60 * 1000,
+      ...TIERS.A,
       retry: false,
     })),
   });

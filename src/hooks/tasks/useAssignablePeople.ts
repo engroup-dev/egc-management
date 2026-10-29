@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabaseClient";
+import { TIERS } from "../../lib/queryClient";
 
 // Backs every assignee picker in the tasks module (AssigneeCell and its
 // call sites). Reads public.assignable_people, a view unioning
@@ -24,7 +25,7 @@ export function useAssignablePeople() {
       if (error) throw error;
       return data ?? [];
     },
-    staleTime: 5 * 60 * 1000,
+    ...TIERS.A,
   });
   return query.data ?? [];
 }

@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { permissionsDb } from "../../lib/permissionsDb";
 import { supabase } from "../../lib/supabaseClient";
+import { TIERS } from "../../lib/queryClient";
 import type { ProjectRoleHolderRow, ProjectRoleRow } from "../../types/permissions.types";
 
 // =====================================================================
@@ -129,7 +130,7 @@ export function useProjectTeam(projectId: string | undefined) {
 export function useProjectRoles() {
   return useQuery<ProjectRoleRow[]>({
     queryKey: PROJECT_ROLES_KEY,
-    staleTime: 60 * 60 * 1000,
+    ...TIERS.A,
     queryFn: async () => {
       const { data, error } = await permissionsDb
         .from("project_roles")
