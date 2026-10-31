@@ -26,14 +26,15 @@ import PenaltyFormDialog from "./PenaltyFormDialog";
 //  - on a project page (projectId set): that project's penalties + "new"
 //  - in the payments queue (projectId null): every project's
 // A penalty counts as soon as it's saved; a wrong one can be cancelled
-// (with a reason) until a payment deducts it — by whoever recorded it,
-// or from the payments queue (canCancelAny).
+// (with a reason) until a payment deducts it — by whoever recorded it, or
+// by anyone who may add penalties on the project / the payments queue
+// (canCancelAny; the DB makes the final call).
 
 type Props = {
   projectId: string | null;
   /** Project page: show the "new penalty" button. */
   canCreate?: boolean;
-  /** Payments queue: may cancel anyone's (not only their own). */
+  /** Project tab (create_contractor_penalty) or payments queue: may cancel anyone's (not only their own). */
   canCancelAny?: boolean;
 };
 

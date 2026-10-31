@@ -25,7 +25,7 @@ const OperationsAgreementsProjectPage = () => {
               {
                 id: "penalties",
                 label: "الغرامات",
-                content: <PenaltiesTable projectId={projectId} canCreate />,
+                content: <PenaltiesTable projectId={projectId} canCreate canCancelAny />,
               },
             ]
           : []),
