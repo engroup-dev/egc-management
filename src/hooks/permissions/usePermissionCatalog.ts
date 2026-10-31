@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { permissionsDb } from "../../lib/permissionsDb";
+import { TIERS } from "../../lib/queryClient";
 import type { PermissionCatalogRow } from "../../types/permissions.types";
 
 export const PERMISSION_CATALOG_KEY = ["permission-catalog"];
@@ -18,7 +19,7 @@ export const PERMISSION_CATALOG_KEY = ["permission-catalog"];
 export function usePermissionCatalog() {
   return useQuery<PermissionCatalogRow[]>({
     queryKey: PERMISSION_CATALOG_KEY,
-    staleTime: 60 * 60 * 1000,
+    ...TIERS.A,
     queryFn: async () => {
       const { data, error } = await permissionsDb
         .from("permission_catalog")

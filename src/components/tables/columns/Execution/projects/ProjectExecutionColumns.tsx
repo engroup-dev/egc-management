@@ -5,6 +5,8 @@ import { Link } from "react-router-dom";
 import Dialog from "../../../../../components/ui/Dialog";
 import Button from "../../../../../components/ui/Button";
 import { ProjectExecution } from "../../../../../hooks/execution-management/project/useProjects";
+import { fetchProjectOverview } from "../../../../../hooks/projects/useProjectOverview";
+import { TIERS } from "../../../../../lib/queryClient";
 import { formatDate } from "../../../../../utils/helpper";
 import { statusColor } from "../../../../../utils/colors/status";
 import { supabase } from "../../../../../lib/supabaseClient";
@@ -144,6 +146,32 @@ function ProjectDateEditDialog({ project }: { project: ProjectExecution }) {
   );
 }
 
+function ProjectNameCell({ project }: { project: ProjectExecution }) {
+  const queryClient = useQueryClient();
+  // Was /projects/:id, which jumped out of Execution Management into
+  // the Projects section. Now stays here and opens the project's team
+  // screen — this table is the way in to team management.
+  const prefetch = () => {
+    queryClient.prefetchQuery({
+      queryKey: ["project", project.id, "overview"],
+      queryFn: () => fetchProjectOverview(project.id),
+      staleTime: TIERS.B.staleTime,
+    });
+  };
+  return (
+    <div>
+      <Link
+        to={`/execution-management/projects/${project.id}`}
+        onMouseEnter={prefetch}
+        onFocus={prefetch}
+        className="font-medium hover:underline"
+      >
+        {project.name}
+      </Link>
+    </div>
+  );
+}
+
 export const ProjectExecutionColumns: ColumnDef<ProjectExecution>[] = [
   // Selection column
   {
@@ -178,20 +206,7 @@ export const ProjectExecutionColumns: ColumnDef<ProjectExecution>[] = [
   {
     accessorKey: "name",
     header: "اسم المشروع",
-    cell: ({ row }) => (
-      <div>
-        {/* Was /projects/:id, which jumped out of Execution Management
-            into the Projects section. Now stays here and opens the
-            project's team screen — this table is the way in to team
-            management. */}
-        <Link
-          to={`/execution-management/projects/${row.original.id}`}
-          className="font-medium hover:underline"
-        >
-          {row.original.name}
-        </Link>
-      </div>
-    ),
+    cell: ({ row }) => <ProjectNameCell project={row.original} />,
   },
 
   {

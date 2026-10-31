@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { permissionsDb } from "../../lib/permissionsDb";
+import { TIERS } from "../../lib/queryClient";
 import { projectTeamKey } from "../team/useTeamAssignments";
 
 /**
@@ -18,7 +19,7 @@ export function useProjectMemberIds(projectId: string | null | undefined, enable
   return useQuery<Set<string>>({
     queryKey: [...projectTeamKey(projectId ?? "none"), "member-ids"],
     enabled: Boolean(projectId) && enabled,
-    staleTime: 60 * 1000,
+    ...TIERS.B,
     queryFn: async () => {
       const { data, error } = await permissionsDb
         .from("project_role_holders")

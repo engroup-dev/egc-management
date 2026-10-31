@@ -5,6 +5,7 @@ import {
   filesApiDownload,
   filesApiUpload,
 } from "../../../lib/filesApiClient";
+import { TIERS } from "../../../lib/queryClient";
 import type { Json } from "../../../lib/supabase";
 import { useAuthUserId } from "../../permissions/useCan";
 import type {
@@ -109,7 +110,7 @@ export function useMyDrawingCaps(projectId: string | undefined) {
   return useQuery({
     queryKey: drawingKeys.caps(projectId ?? "", userId),
     enabled: !!projectId && resolved && !!userId,
-    staleTime: 30_000,
+    ...TIERS.E,
     queryFn: async (): Promise<DrawingCaps> => {
       const { data, error } = await drawings().rpc("my_caps", {
         p_project_id: projectId as string,
@@ -225,7 +226,7 @@ export function useDrawingProjectName(projectId: string | undefined, enabled = t
   return useQuery({
     queryKey: drawingKeys.projectName(projectId ?? ""),
     enabled: enabled && !!projectId,
-    staleTime: 5 * 60_000,
+    ...TIERS.A,
     queryFn: async (): Promise<string> => {
       const { data, error } = await supabase
         .from("projects")
@@ -243,6 +244,7 @@ export function useAllMapTypes(enabled = true) {
   return useQuery({
     queryKey: drawingKeys.mapTypes,
     enabled,
+    ...TIERS.A,
     queryFn: async (): Promise<MapType[]> => {
       const { data, error } = await supabase.from("map_types").select("*").order("name");
       if (error) throw toError(error, "تعذر تحميل أنواع الخرائط");
@@ -261,6 +263,7 @@ function useInvalidateProject(projectId: string | undefined) {
 }
 
 export function useAddDrawingFolder(projectId: string | undefined) {
+  const qc = useQueryClient();
   const invalidate = useInvalidateProject(projectId);
   return useMutation({
     mutationFn: async (mapTypeIds: string[]) => {
@@ -271,15 +274,59 @@ export function useAddDrawingFolder(projectId: string | undefined) {
       const { error } = await drawings().from("folders").insert(rows);
       if (error) throw toError(error, "تعذر إضافة أنواع الخرائط");
     },
-    onSuccess: invalidate,
+    onMutate: async (mapTypeIds) => {
+      if (!projectId) return { previous: undefined };
+      const foldersKey = drawingKeys.folders(projectId);
+      await qc.cancelQueries({ queryKey: foldersKey });
+      const previous = qc.getQueryData<DrawingFolderRow[]>(foldersKey);
+      const mapTypes = (qc.getQueryData<MapType[]>(drawingKeys.mapTypes) ?? []).reduce(
+        (acc, m) => acc.set(m.id, m.name),
+        new Map<string, string>(),
+      );
+      const now = new Date().toISOString();
+      const basePosition = (previous ?? []).reduce((max, f) => Math.max(max, f.position ?? 0), 9);
+      const additions: DrawingFolderRow[] = mapTypeIds.map((id, i) => ({
+        id: `optimistic-${id}-${now}`,
+        project_id: projectId,
+        map_type_id: id,
+        position: basePosition + 1 + i,
+        created_at: now,
+        name: mapTypes.get(id) ?? "",
+        statusByName: null,
+        latest: null,
+      }) as DrawingFolderRow);
+      qc.setQueryData<DrawingFolderRow[]>(foldersKey, [...(previous ?? []), ...additions]);
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (!projectId || !context?.previous) return;
+      qc.setQueryData(drawingKeys.folders(projectId), context.previous);
+    },
+    onSettled: invalidate,
   });
 }
 
 export function useDeleteDrawingFolder(projectId: string | undefined) {
+  const qc = useQueryClient();
   const invalidate = useInvalidateProject(projectId);
   return useMutation({
     mutationFn: (folderId: string) => filesApiDelete(`/drawings/folders/${folderId}`),
-    onSuccess: invalidate,
+    onMutate: async (folderId) => {
+      if (!projectId) return { previous: undefined };
+      const foldersKey = drawingKeys.folders(projectId);
+      await qc.cancelQueries({ queryKey: foldersKey });
+      const previous = qc.getQueryData<DrawingFolderRow[]>(foldersKey);
+      qc.setQueryData<DrawingFolderRow[]>(
+        foldersKey,
+        (previous ?? []).filter((f) => f.id !== folderId),
+      );
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (!projectId || !context?.previous) return;
+      qc.setQueryData(drawingKeys.folders(projectId), context.previous);
+    },
+    onSettled: invalidate,
   });
 }
 

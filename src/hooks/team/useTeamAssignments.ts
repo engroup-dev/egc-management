@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { permissionsDb } from "../../lib/permissionsDb";
 import { supabase } from "../../lib/supabaseClient";
+import { TIERS } from "../../lib/queryClient";
 import type { ProjectRoleHolderRow, ProjectRoleRow } from "../../types/permissions.types";
 
 // =====================================================================
@@ -129,7 +130,7 @@ export function useProjectTeam(projectId: string | undefined) {
 export function useProjectRoles() {
   return useQuery<ProjectRoleRow[]>({
     queryKey: PROJECT_ROLES_KEY,
-    staleTime: 60 * 60 * 1000,
+    ...TIERS.A,
     queryFn: async () => {
       const { data, error } = await permissionsDb
         .from("project_roles")
@@ -409,7 +410,21 @@ export function useRemoveTeamMember() {
         .eq("id", assignmentId);
       if (error) throw error;
     },
-    onSuccess: (_data, variables) => {
+    onMutate: async ({ projectId, assignmentId }: RemoveArgs) => {
+      const key = projectTeamKey(projectId);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<TeamMember[]>(key);
+      queryClient.setQueryData<TeamMember[]>(
+        key,
+        (previous ?? []).filter((m) => m.assignmentId !== assignmentId),
+      );
+      return { previous };
+    },
+    onError: (_err, variables, context) => {
+      if (!context?.previous) return;
+      queryClient.setQueryData(projectTeamKey(variables.projectId), context.previous);
+    },
+    onSettled: (_data, _err, variables) => {
       invalidateRoleHolders(queryClient, variables.projectId);
       // Deliberately does NOT invalidate anything distribution-related.
       // Removing someone from a team has no effect on their percentage,

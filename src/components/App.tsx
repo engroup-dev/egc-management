@@ -7,6 +7,8 @@ import MainMenu from "../pages/MainMenu";
 import ProfilePage from "../pages/profile/profile";
 import MainMenuLayout from "./layouts/MainMenuLayout";
 import { AuthProvider, useAuth } from "../hooks/useAuth";
+import { QueryPersistenceGate } from "./providers/QueryPersistenceGate";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import RequirePasswordChange from "./auth/RequirePasswordChange";
 import ChangePasswordPage from "./auth/ChangePasswordPage";
 import HRRoutes from "./pages/HRRoutes";
@@ -188,11 +190,15 @@ const AppRouter = () => {
 const App = () => (
   <Router>
     <AuthProvider>
+      <QueryPersistenceGate />
       <UpdateProvider>
         <SidebarProvider>
           <AppRouter />
         </SidebarProvider>
       </UpdateProvider>
+      {process.env.NODE_ENV === "development" && (
+        <ReactQueryDevtools initialIsOpen={false} />
+      )}
     </AuthProvider>
   </Router>
 );

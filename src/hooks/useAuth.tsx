@@ -11,6 +11,7 @@ import { authService } from "../services/authService";
 import { supabase } from "../lib/supabaseClient";
 import { UserData } from "../lib/userStorage";
 import { trackSession } from "../lib/sessionTracking";
+import { prefetchAppCatalogs } from "../lib/prefetchCatalogs";
 
 interface AuthContextType {
   user: UserData | null;
@@ -177,6 +178,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => clearInterval(interval);
   }, [user?.id]);
+
+  // Pre-warm the tier-A catalogs every logged-in session will read early
+  // (permission catalog, map types, assignable people, task types).
+  // Each is small, cached an hour, and reused across most screens, so
+  // kicking them off at login turns the first consuming render into a
+  // cache hit instead of a round-trip.
+  useEffect(() => {
+    if (!user?.id) return;
+    prefetchAppCatalogs(queryClient);
+  }, [user?.id, queryClient]);
 
   const logout = useCallback(async () => {
     await authService.logout();

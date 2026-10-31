@@ -117,6 +117,11 @@ export function useSaveGrants() {
       // Any displayed "where it came from" context is now stale.
       queryClient.invalidateQueries({ queryKey: ["effective-permissions"] });
       queryClient.invalidateQueries({ queryKey: ["inherited-grants"] });
+      // The current user's own effective-permissions set is a separate
+      // cache slice (useCan). Without this invalidate, an admin editing
+      // their own grants only sees the UI react after the 30 s stale
+      // window — flip it to a fresh fetch on the next read.
+      queryClient.invalidateQueries({ queryKey: ["my-effective-permissions"] });
     },
   });
 }
