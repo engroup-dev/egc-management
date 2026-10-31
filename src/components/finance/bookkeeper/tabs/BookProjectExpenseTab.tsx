@@ -12,8 +12,7 @@ import OverviewStatus from "../../../ui/OverviewStatus";
 import Button from "../../../ui/Button";
 import { Link } from "react-router-dom";
 import { formatCurrency } from "../../../../utils/helpper";
-import InvoiceButton from "../../../InvoiceButton";
-import InvoiceButtonSummed from "../../../InvoiceButtonSummed";
+import PrintProjectDialog from "../PrintProjectDialog";
 import ExpenseTableFilters from "../../../tables/filters/ExpenseTableFilters";
 
 interface BookProjectExpenseTabProps {
@@ -89,8 +88,7 @@ const BookProjectExpenseTab = ({
         <Button variant="secondary">
           <Link to={`./bulk-expenses`}>إضافة مصروفات بالجملة</Link>
         </Button>
-        <InvoiceButton project={project} />
-        <InvoiceButtonSummed project={project} />
+        <PrintProjectDialog project={project} />
       </div>
 
       <div>
