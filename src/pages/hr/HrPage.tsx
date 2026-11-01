@@ -6,7 +6,7 @@ const HrPage = () => {
 
   return (
     <MenuGrid
-      title="المالية"
+      title="الموارد البشرية"
       items={menuItems}
       columns={{ base: 1, sm: 2, md: 3 }}
     />

@@ -123,6 +123,7 @@ export const SEGMENT_NAMES: Record<string, string> = {
   treasury: "الخزانة",
   type: "النوع",
   types: "الأنواع",
+  users: "المستخدمين",
   vendors: "الموردين",
   view: "عرض",
   website: "إدارة الموقع",

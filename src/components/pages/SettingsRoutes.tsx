@@ -34,6 +34,7 @@ import SettingsDepartmentsPage from "../../pages/settings/departments/SettingsDe
 import DepartmentDetailPage from "../../pages/settings/departments/DepartmentDetailPage";
 import RolePermissionsListPage from "../../pages/settings/permissions/RolePermissionsListPage";
 import RolePermissionsDetailPage from "../../pages/settings/permissions/RolePermissionsDetailPage";
+import UserPermissionsPage from "../../pages/settings/permissions/UserPermissionsPage";
 import EvaluationSettingsPage from "../../pages/settings/evaluation/EvaluationSettingsPage";
 import QuestionBankPage from "../../pages/settings/questionBank/QuestionBankPage";
 import ScoringSettingsPage from "../../pages/settings/scoring/ScoringSettingsPage";
@@ -52,6 +53,8 @@ export default function SettingsRoutes() {
                 "manage_specialities",
                 "manage_roles",
                 "manage_project_roles",
+                "manage_departments",
+                "manage_permissions_company",
               ]}
             />
           }
@@ -160,6 +163,14 @@ export default function SettingsRoutes() {
           <Route
             path="permissions/roles/:id"
             element={<RolePermissionsDetailPage />}
+          />
+          <Route
+            path="permissions/users"
+            element={<UserPermissionsPage />}
+          />
+          <Route
+            path="permissions/users/:id"
+            element={<UserPermissionsPage />}
           />
         </Route>
 

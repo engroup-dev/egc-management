@@ -17,6 +17,7 @@ import {
   Monitor,
   Ruler,
   ShieldCheck,
+  UserCog,
   Users,
 } from "lucide-react";
 import type { NavItem } from "./types";
@@ -27,7 +28,7 @@ export const SETTINGS_ITEMS: NavItem[] = [
     label: "اداره الادوار",
     icon: Users,
     path: "/settings/roles",
-    description: "إدارة  الأدوار والصلاحيات",
+    description: "إضافة وتعديل مسميات الأدوار الوظيفية",
     permission: "manage_roles",
   },
   {
@@ -90,6 +91,13 @@ export const SETTINGS_ITEMS: NavItem[] = [
     icon: ShieldCheck,
     path: "/settings/permissions/roles",
     description: "الصلاحيات الأساسية لكل دور وظيفي",
+    permission: "manage_permissions_company",
+  },
+  {
+    label: "صلاحيات المستخدمين",
+    icon: UserCog,
+    path: "/settings/permissions/users",
+    description: "تخصيص الموديولات والصلاحيات لكل مستخدم على حدة",
     permission: "manage_permissions_company",
   },
   {

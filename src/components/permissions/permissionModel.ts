@@ -89,7 +89,7 @@ export const SCOPE_HELP: Record<GrantScope, string> = {
 export const STATE_LABELS: Record<PermissionState, string> = {
   allow: "مسموح",
   deny: "ممنوع",
-  unset: "غير محدد",
+  unset: "افتراضي الدور",
 };
 
 // ---------------------------------------------------------------------

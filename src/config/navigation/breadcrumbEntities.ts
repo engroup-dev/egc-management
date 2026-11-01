@@ -179,6 +179,11 @@ export const BREADCRUMB_ENTITIES: BreadcrumbEntity[] = [
 
   // ---- people ----
   {
+    patterns: ["/settings/permissions/users/:id"],
+    resolve: async (id) =>
+      fullName(await fetchRow(supabase.from("users").select("first_name, last_name").eq("id", id).maybeSingle())),
+  },
+  {
     patterns: ["/hr/employees/:id", "/company/salaries/:id", "/company/distribute/employee/:id"],
     resolve: async (id) =>
       fullName(await fetchRow(supabase.from("employees").select("first_name, last_name").eq("id", id).maybeSingle())),

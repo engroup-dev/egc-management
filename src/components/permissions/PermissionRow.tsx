@@ -55,26 +55,30 @@ interface PermissionRowProps {
 const STATE_BUTTONS: {
   value: PermissionState;
   label: string;
+  hint: string;
   icon: typeof Check;
   activeClass: string;
 }[] = [
   {
     value: "allow",
     label: "مسموح",
+    hint: "منح استثناء مسموح لهذا الشخص تحديداً (حتى لو لم يكن مسموحاً في دوره)",
     icon: Check,
     activeClass: "bg-green-600 text-white border-green-600",
   },
   {
     value: "deny",
     label: "ممنوع",
+    hint: "حجب هذه الصلاحية عن هذا الشخص تحديداً (حتى لو كان دوره يسمح بها)",
     icon: X,
     activeClass: "bg-red-600 text-white border-red-600",
   },
   {
     value: "unset",
-    label: "غير محدد",
+    label: "افتراضي الدور",
+    hint: "لا يوجد استثناء فردي — يتبع تلقائياً ما هو محدد في دوره وقسمه",
     icon: Minus,
-    activeClass: "bg-gray-600 text-white border-gray-600",
+    activeClass: "bg-gray-700 text-white border-gray-700",
   },
 ];
 
@@ -159,6 +163,7 @@ export default function PermissionRow({
               <button
                 key={btn.value}
                 type="button"
+                title={btn.hint}
                 disabled={disabled}
                 onClick={() => setState(btn.value)}
                 className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-md border transition-colors disabled:opacity-50 ${

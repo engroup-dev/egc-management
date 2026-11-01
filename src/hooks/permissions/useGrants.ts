@@ -122,6 +122,7 @@ export function useSaveGrants() {
       // their own grants only sees the UI react after the 30 s stale
       // window — flip it to a fresh fetch on the next read.
       queryClient.invalidateQueries({ queryKey: ["my-effective-permissions"] });
+      queryClient.invalidateQueries({ queryKey: ["permission-users-admin"] });
     },
   });
 }

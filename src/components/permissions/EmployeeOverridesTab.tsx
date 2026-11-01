@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { Briefcase, Building2, Info } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Briefcase, Building2, ExternalLink, Info } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 import { usePermissionCatalog } from "../../hooks/permissions/usePermissionCatalog";
 import { useGrants, useSaveGrants } from "../../hooks/permissions/useGrants";
@@ -134,15 +135,24 @@ export default function EmployeeOverridesTab({
   return (
     <div className="space-y-4">
       {/* Read-only summary line — guide section 4.3 step 2 */}
-      <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex flex-wrap items-center gap-4 text-sm">
-        <span className="flex items-center gap-1.5 text-gray-700">
-          <Briefcase size={15} className="text-gray-400" />
-          الدور: <strong>{roleName || "غير محدد"}</strong>
-        </span>
-        <span className="flex items-center gap-1.5 text-gray-700">
-          <Building2 size={15} className="text-gray-400" />
-          القسم: <strong>{department?.name || "غير محدد"}</strong>
-        </span>
+      <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-4 text-sm">
+        <div className="flex flex-wrap items-center gap-4">
+          <span className="flex items-center gap-1.5 text-gray-700">
+            <Briefcase size={15} className="text-gray-400" />
+            الدور: <strong>{roleName || "غير محدد"}</strong>
+          </span>
+          <span className="flex items-center gap-1.5 text-gray-700">
+            <Building2 size={15} className="text-gray-400" />
+            القسم: <strong>{department?.name || "غير محدد"}</strong>
+          </span>
+        </div>
+        <Link
+          to={`/settings/permissions/users/${employeeId}`}
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+        >
+          <ExternalLink size={13} />
+          فتح في شاشة صلاحيات المستخدمين (حسب الموديولات)
+        </Link>
       </div>
 
       <div className="flex items-start gap-2 text-[11px] text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
