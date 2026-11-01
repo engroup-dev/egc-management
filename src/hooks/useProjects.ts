@@ -1,234 +1,186 @@
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabaseClient";
 import type { Database } from "../lib/supabase";
 import { Projects } from "../types/global.type";
 import { ProjectFormValues } from "../types/schema/projects.schema";
 import { FullProject } from "../types/extended.type";
 
+const PROJECTS_LIST_KEY = ["projects-list"] as const;
+const projectDetailKey = (id: string) => ["projects-detail", id] as const;
+
+async function fetchProjectsList(): Promise<FullProject[]> {
+  const { data, error } = await supabase
+    .from("projects")
+    .select("*, project_balances(*), project_percentage(*), accounts(*)")
+    .order("serial_number", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as FullProject[];
+}
+
 export function useProjects() {
-  const [projects, setProjects] = useState<FullProject[] | null>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<Error | null>(null);
+  const queryClient = useQueryClient();
+  const [mutationError, setMutationError] = useState<Error | null>(null);
+  const [mutating, setMutating] = useState(false);
 
-  useEffect(() => {
-    async function fetchProjects() {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("projects")
-        .select("*, project_balances(*), project_percentage(*), accounts(*)")
-        .order("serial_number", { ascending: true });
+  const {
+    data: projects = [],
+    isPending: fetchLoading,
+    error: fetchError,
+    refetch,
+  } = useQuery({
+    queryKey: PROJECTS_LIST_KEY,
+    queryFn: fetchProjectsList,
+  });
 
-      if (error) {
-        console.error("error fetching employyes", error);
-        setError(error);
-      } else {
-        setProjects(data ?? []);
-      }
-
-      setLoading(false);
-    }
-
-    fetchProjects();
-  }, []); // runs once on mount
+  const loading = fetchLoading || mutating;
+  const error = mutationError ?? (fetchError as Error | null) ?? null;
 
   const addProject = async (newProject: ProjectFormValues) => {
-    setLoading(true);
-    // fetch the company projects_counter for serial number
-    const { data: companyData, error: companyError } = await supabase
-      .from("company")
-      .select("*")
-      .single();
+    setMutating(true);
+    setMutationError(null);
+    try {
+      const { data: companyData, error: companyError } = await supabase
+        .from("company")
+        .select("*")
+        .single();
 
-    if (companyError) {
-      console.error("error fetching company data", companyError);
-      setError(companyError);
-      setLoading(false);
-      return null;
-    }
+      if (companyError) {
+        setMutationError(companyError);
+        return null;
+      }
 
-    const CODE = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const payload: Database["public"]["Tables"]["projects"]["Insert"] = {
-      name: newProject.name,
-      description: (newProject.description ?? null) as string | null,
-      client_id: newProject.client_id,
-      address: (newProject.address ?? null) as string | null,
-      status: "active",
-      serial_number: companyData?.projects_counter ?? null,
-      code: CODE,
-      created_at: new Date().toISOString(),
-      start_date: newProject.start_date?.toISOString() ?? null,
-      latitude: newProject.latitude ?? null,
-      longitude: newProject.longitude ?? null,
-    };
+      const CODE = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const payload: Database["public"]["Tables"]["projects"]["Insert"] = {
+        name: newProject.name,
+        description: (newProject.description ?? null) as string | null,
+        client_id: newProject.client_id,
+        address: (newProject.address ?? null) as string | null,
+        status: "active",
+        serial_number: companyData?.projects_counter ?? null,
+        code: CODE,
+        created_at: new Date().toISOString(),
+        start_date: newProject.start_date?.toISOString() ?? null,
+        latitude: newProject.latitude ?? null,
+        longitude: newProject.longitude ?? null,
+      };
 
-    const { data, error } = await supabase
-      .from("projects")
-      .insert(payload)
-      .select()
-      .single(); // return inserted row
+      const { data, error } = await supabase
+        .from("projects")
+        .insert(payload)
+        .select()
+        .single();
 
-    if (error) {
-      console.error("error adding project", error);
-      setError(error);
-      setLoading(false);
-      return null;
-    }
+      if (error) {
+        setMutationError(error);
+        return null;
+      }
 
-    // insert project_balances
-    const balancesToInsert: Database["public"]["Tables"]["project_balances"]["Insert"][] =
-      (["USD", "EUR", "LYD"] as const).map((currency) => ({
-        project_id: data.id,
-        balance: 0,
-        currency,
-      }));
+      const balancesToInsert: Database["public"]["Tables"]["project_balances"]["Insert"][] =
+        (["USD", "EUR", "LYD"] as const).map((currency) => ({
+          project_id: data.id,
+          balance: 0,
+          currency,
+        }));
 
-    const { error: projectBalancesError } = await supabase
-      .from("project_balances")
-      .insert(balancesToInsert);
+      const { error: projectBalancesError } = await supabase
+        .from("project_balances")
+        .insert(balancesToInsert);
+      if (projectBalancesError) setMutationError(projectBalancesError);
 
-    if (projectBalancesError) {
-      console.error("error adding project balances", projectBalancesError);
-      setError(projectBalancesError);
-    }
+      const accountsToInsertAll: Database["public"]["Tables"]["accounts"]["Insert"][] =
+        (["USD", "EUR", "LYD"] as const).map((currency) => ({
+          currency,
+          owner_id: data.id,
+          owner_type: "project",
+          type: "cash",
+          balance: 0,
+        }));
 
-    // ensure cash accounts for USD, EUR, LYD and add a LYD bank account
-    const accountsToInsertAll: Database["public"]["Tables"]["accounts"]["Insert"][] =
-      (["USD", "EUR", "LYD"] as const).map((currency) => ({
-        currency,
+      accountsToInsertAll.push({
+        currency: "LYD",
         owner_id: data.id,
         owner_type: "project",
-        type: "cash",
+        type: "bank",
         balance: 0,
-      }));
+      });
 
-    // add bank account for LYD (so LYD has both cash and bank)
-    accountsToInsertAll.push({
-      currency: "LYD",
-      owner_id: data.id,
-      owner_type: "project",
-      type: "bank",
-      balance: 0,
-    });
+      const { error: accountsError } = await supabase
+        .from("accounts")
+        .insert(accountsToInsertAll);
+      if (accountsError) setMutationError(accountsError);
 
-    const { error: accountsError } = await supabase
-      .from("accounts")
-      .insert(accountsToInsertAll);
+      const percentageData: Database["public"]["Tables"]["project_percentage"]["Insert"][] =
+        (["USD", "EUR", "LYD"] as const).map((currency) => ({
+          period_start: new Date().toISOString(),
+          project_id: data.id,
+          percentage: newProject.percentage ?? 0,
+          currency: currency,
+          period_percentage: 0,
+          total_percentage: 0,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          type: "cash",
+        }));
 
-    if (accountsError) {
-      console.error("error adding project accounts", accountsError);
-      setError(accountsError);
-    }
-
-    // insert percentage
-    const percentageData: Database["public"]["Tables"]["project_percentage"]["Insert"][] =
-      (["USD", "EUR", "LYD"] as const).map((currency) => ({
+      percentageData.push({
         period_start: new Date().toISOString(),
         project_id: data.id,
         percentage: newProject.percentage ?? 0,
-        currency: currency,
+        currency: "LYD",
         period_percentage: 0,
         total_percentage: 0,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        type: "cash",
-      }));
+        type: "bank",
+      });
 
-    percentageData.push({
-      period_start: new Date().toISOString(),
-      project_id: data.id,
-      percentage: newProject.percentage ?? 0,
-      currency: "LYD",
-      period_percentage: 0,
-      total_percentage: 0,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      type: "bank",
-    });
+      const { error: percentageError } = await supabase
+        .from("project_percentage")
+        .insert(percentageData);
+      if (percentageError) setMutationError(percentageError);
 
-    const { error: percentageError } = await supabase
-      .from("project_percentage")
-      .insert(percentageData);
+      const { error: counterError } = await supabase
+        .from("company")
+        .update({
+          projects_counter: (companyData?.projects_counter || 0) + 1,
+        })
+        .eq("id", companyData?.id);
+      if (counterError) setMutationError(counterError);
 
-    if (percentageError) {
-      console.error("error adding project percentage", percentageError);
-      setError(percentageError);
+      await queryClient.invalidateQueries({ queryKey: PROJECTS_LIST_KEY });
+      return data;
+    } finally {
+      setMutating(false);
     }
-
-    // update counter in company table
-    const { error: counterError } = await supabase
-      .from("company")
-      .update({
-        projects_counter: (companyData?.projects_counter || 0) + 1,
-      })
-      .eq("id", companyData?.id);
-
-    if (counterError) {
-      console.error("error updating company projects counter", counterError);
-      setError(counterError);
-    }
-
-    // update local state
-    if (data) {
-      const newProjectWithRelations = {
-        ...data,
-        project_balances: [],
-        project_percentage: [],
-      } as unknown as FullProject;
-      setProjects((prev) => [...(prev ?? []), newProjectWithRelations]);
-    }
-
-    setLoading(false);
-    return data; // return the new project
   };
 
-  const refresh = async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("projects")
-      .select("*, project_balances(*), project_percentage(*), accounts(*)");
-
-    if (error) {
-      console.error("error refreshing projects", error);
-      setError(error);
-      setLoading(false);
-      return null;
-    }
-
-    setProjects(data ?? []);
-    setError(null);
-    setLoading(false);
-    return data;
-  };
+  const refresh = useCallback(async () => {
+    const result = await refetch();
+    return result.data ?? null;
+  }, [refetch]);
 
   return { projects, loading, error, addProject, refresh };
 }
 
 export function useProject(id: string) {
-  const [project, setProject] = useState<Projects | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<Error | null>(null);
-
-  useEffect(() => {
-    async function fetchProject() {
-      setLoading(true);
+  const {
+    data: project = null,
+    isPending: loading,
+    error,
+  } = useQuery({
+    queryKey: projectDetailKey(id),
+    queryFn: async () => {
       const { data, error } = await supabase
         .from("projects")
         .select("*")
         .eq("id", id)
         .single();
+      if (error) throw error;
+      return data as Projects;
+    },
+    enabled: !!id,
+  });
 
-      if (error) {
-        console.error("error fetching employyes", error);
-        setError(error);
-      } else {
-        setProject(data);
-      }
-
-      setLoading(false);
-    }
-
-    fetchProject();
-  }, [id]);
-
-  return { project, loading, error };
+  return { project, loading, error: (error as Error | null) ?? null };
 }

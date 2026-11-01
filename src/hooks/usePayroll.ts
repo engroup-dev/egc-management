@@ -1,46 +1,36 @@
-import { useCallback, useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PostgrestError } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabaseClient";
 import { PayrollWithRelations } from "../types/extended.type";
 
+const PAYROLL_KEY = ["payroll"] as const;
+
+async function fetchPayroll(): Promise<PayrollWithRelations[]> {
+  const { data: employees, error: employeesError } = await supabase
+    .from("employees")
+    .select("id");
+  if (employeesError) throw employeesError;
+
+  const { data: payrollData, error: payrollError } = await supabase
+    .from("payroll")
+    .select(`*, employees(first_name, last_name)`)
+    .in("employee_id", employees?.map((emp) => emp.id) || []);
+  if (payrollError) throw payrollError;
+
+  return (payrollData ?? []) as PayrollWithRelations[];
+}
+
 export function usePayroll() {
-  const [payroll, setPayroll] = useState<PayrollWithRelations[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<PostgrestError | null>(null);
-
-  const fetchPayroll = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    const { data: employees, error: employeesError } = await supabase
-      .from("employees")
-      .select("id");
-
-    if (employeesError) {
-      console.error("error fetching employees", employeesError);
-      setError(employeesError);
-      setLoading(false);
-      return;
-    }
-
-    const { data: payrollData, error: payrollError } = await supabase
-      .from("payroll")
-      .select(`*, employees(first_name, last_name)`)
-      .in("employee_id", employees?.map((emp) => emp.id) || []);
-
-    if (payrollError) {
-      console.error("error fetching payroll", payrollError);
-      setError(payrollError);
-    } else {
-      setPayroll(payrollData ?? []);
-    }
-
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    fetchPayroll();
-  }, [fetchPayroll]);
+  const queryClient = useQueryClient();
+  const {
+    data: payroll = [],
+    isPending: loading,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: PAYROLL_KEY,
+    queryFn: fetchPayroll,
+  });
 
   const markAsPaid = async (
     payrollIds: string[],
@@ -48,7 +38,6 @@ export function usePayroll() {
     if (payrollIds.length === 0) return { success: true };
 
     try {
-      // check current status of the selected rows first
       const { data: existing, error: fetchError } = await supabase
         .from("payroll")
         .select("id, status")
@@ -78,9 +67,7 @@ export function usePayroll() {
 
       if (error) throw error;
 
-      // refresh local state — since the query only pulls status="pending",
-      // the just-paid rows will simply drop out of `payroll` after this
-      await fetchPayroll();
+      await queryClient.invalidateQueries({ queryKey: PAYROLL_KEY });
 
       return { success: true };
     } catch (err) {
@@ -95,8 +82,8 @@ export function usePayroll() {
   return {
     payroll,
     loading,
-    error,
+    error: (error as PostgrestError | null) ?? null,
     markAsPaid,
-    refetch: fetchPayroll,
+    refetch,
   };
 }

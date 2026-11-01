@@ -1,8 +1,11 @@
 // hooks/useBanks.ts
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabaseClient";
 import { Bank } from "../types/global.type";
 import { normalizeError } from "./useMaps";
+
+const BANKS_KEY = ["banks"] as const;
 
 const DUPLICATE_BANK_NAME_MESSAGE = "يوجد بنك بهذا الاسم بالفعل";
 
@@ -17,38 +20,39 @@ function isUniqueViolation(e: unknown) {
   );
 }
 
+async function fetchBanks(): Promise<Bank[]> {
+  const { data, error } = await supabase
+    .schema("lookups")
+    .from("banks")
+    .select("id,name,created_at")
+    .order("name", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as Bank[];
+}
+
 export function useBanks() {
-  const [banks, setBanks] = useState<Bank[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<{ message: string } | null>(null);
+  const queryClient = useQueryClient();
+  const [mutationError, setMutationError] = useState<
+    { message: string } | null
+  >(null);
 
-  const fetchBanks = useCallback(async () => {
-    setLoading(true);
-    try {
-      setError(null);
-      const { data, error } = await supabase
-        .schema("lookups")
-        .from("banks")
-        .select("id,name,created_at")
-        .order("name", { ascending: false });
+  const {
+    data: banks = [],
+    isPending: loading,
+    error: fetchError,
+    refetch: refetchBase,
+  } = useQuery({
+    queryKey: BANKS_KEY,
+    queryFn: fetchBanks,
+  });
 
-      if (error) throw error;
-      setBanks((data ?? []) as Bank[]);
-    } catch (e: unknown) {
-      const msg = normalizeError(e, "فشل في تحميل البنوك");
-      setError({ message: msg });
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchBanks();
-  }, [fetchBanks]);
+  const error =
+    mutationError ??
+    (fetchError ? { message: normalizeError(fetchError, "فشل في تحميل البنوك") } : null);
 
   const refetch = useCallback(async () => {
-    await fetchBanks();
-  }, [fetchBanks]);
+    await refetchBase();
+  }, [refetchBase]);
 
   const isDuplicateName = useCallback(
     (name: string, excludeId?: string) =>
@@ -66,12 +70,12 @@ export function useBanks() {
       if (!trimmed) throw new Error("الاسم مطلوب");
 
       if (isDuplicateName(trimmed)) {
-        setError({ message: DUPLICATE_BANK_NAME_MESSAGE });
+        setMutationError({ message: DUPLICATE_BANK_NAME_MESSAGE });
         throw new Error(DUPLICATE_BANK_NAME_MESSAGE);
       }
 
       try {
-        setError(null);
+        setMutationError(null);
 
         const { data, error } = await supabase
           .schema("lookups")
@@ -84,17 +88,19 @@ export function useBanks() {
 
         const row = data as Bank;
 
-        setBanks((prev) => [row, ...prev]);
+        queryClient.setQueryData<Bank[]>(BANKS_KEY, (prev) =>
+          prev ? [row, ...prev] : [row],
+        );
         return row;
       } catch (e: unknown) {
         const msg = isUniqueViolation(e)
           ? DUPLICATE_BANK_NAME_MESSAGE
           : normalizeError(e, "فشل في إضافة بنك");
-        setError({ message: msg });
+        setMutationError({ message: msg });
         throw new Error(msg);
       }
     },
-    [isDuplicateName],
+    [isDuplicateName, queryClient],
   );
 
   const edit = useCallback(
@@ -103,12 +109,12 @@ export function useBanks() {
       if (!trimmed) throw new Error("الاسم مطلوب");
 
       if (isDuplicateName(trimmed, id)) {
-        setError({ message: DUPLICATE_BANK_NAME_MESSAGE });
+        setMutationError({ message: DUPLICATE_BANK_NAME_MESSAGE });
         throw new Error(DUPLICATE_BANK_NAME_MESSAGE);
       }
 
       try {
-        setError(null);
+        setMutationError(null);
 
         const { error } = await supabase
           .schema("lookups")
@@ -118,39 +124,46 @@ export function useBanks() {
 
         if (error) throw error;
 
-        setBanks((prev) =>
-          prev.map((b) => (b.id === id ? { ...b, name: trimmed } : b)),
+        queryClient.setQueryData<Bank[]>(BANKS_KEY, (prev) =>
+          prev
+            ? prev.map((b) => (b.id === id ? { ...b, name: trimmed } : b))
+            : prev,
         );
       } catch (e: unknown) {
         const msg = isUniqueViolation(e)
           ? DUPLICATE_BANK_NAME_MESSAGE
           : normalizeError(e, "فشل في تعديل البنك");
-        setError({ message: msg });
+        setMutationError({ message: msg });
         throw new Error(msg);
       }
     },
-    [isDuplicateName],
+    [isDuplicateName, queryClient],
   );
 
-  const remove = useCallback(async (id: string) => {
-    try {
-      setError(null);
+  const remove = useCallback(
+    async (id: string) => {
+      try {
+        setMutationError(null);
 
-      const { error } = await supabase
-        .schema("lookups")
-        .from("banks")
-        .delete()
-        .eq("id", id);
+        const { error } = await supabase
+          .schema("lookups")
+          .from("banks")
+          .delete()
+          .eq("id", id);
 
-      if (error) throw error;
+        if (error) throw error;
 
-      setBanks((prev) => prev.filter((b) => b.id !== id));
-    } catch (e: unknown) {
-      const msg = normalizeError(e, "فشل في حذف البنك");
-      setError({ message: msg });
-      throw new Error(msg);
-    }
-  }, []);
+        queryClient.setQueryData<Bank[]>(BANKS_KEY, (prev) =>
+          prev ? prev.filter((b) => b.id !== id) : prev,
+        );
+      } catch (e: unknown) {
+        const msg = normalizeError(e, "فشل في حذف البنك");
+        setMutationError({ message: msg });
+        throw new Error(msg);
+      }
+    },
+    [queryClient],
+  );
 
   return useMemo(
     () => ({

@@ -7,12 +7,16 @@ import { QueryClient } from "@tanstack/react-query";
 // C — money reads, kept explicitly 0 so a stale balance never shows
 // D — realtime-backed queries; a channel invalidates them, local staleness is 0
 // E — per-user tiny caches (effective permissions, task caps)
+//
+// Default is tier B. gcTime is 24h across the board (except money/realtime)
+// so a long session doesn't drop cached entries between visits — the on-disk
+// persister already preserves them across restarts, memory should match.
 export const TIERS = {
   A: { staleTime: 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000 },
-  B: { staleTime: 60 * 1000, gcTime: 10 * 60 * 1000 },
+  B: { staleTime: 5 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000 },
   C: { staleTime: 0, gcTime: 30 * 1000 },
   D: { staleTime: 0, gcTime: 30 * 1000 },
-  E: { staleTime: 30 * 1000, gcTime: 10 * 60 * 1000 },
+  E: { staleTime: 5 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000 },
 } as const;
 
 export function createQueryClient(): QueryClient {

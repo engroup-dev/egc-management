@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabaseClient";
 import { TIERS } from "../../lib/queryClient";
 
@@ -155,6 +155,7 @@ export function usePerformanceSummary(filters: PerformanceFilters) {
     queryKey: ["tasks", "performance", "summary", filters.range, filters.personType, filters.departmentId],
     ...TIERS.B,
     queryFn: () => call<PerformanceRow>("performance_summary", filterArgs(filters)),
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -164,6 +165,7 @@ export function usePerformanceTrend(filters: Omit<PerformanceFilters, "range">) 
     queryKey: ["tasks", "performance", "trend", range.from, filters.personType, filters.departmentId],
     ...TIERS.B,
     queryFn: () => call<PerformanceTrendPoint>("performance_trend", filterArgs({ ...filters, range })),
+    placeholderData: keepPreviousData,
   });
 }
 

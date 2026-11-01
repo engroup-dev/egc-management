@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Vendor } from "../types/global.type";
 import { PostgrestError } from "@supabase/supabase-js";
@@ -34,68 +33,35 @@ export const useVendorsQuery = () =>
   });
 
 export function useVendors() {
-  const [vendors, setVendors] = useState<VendorsWithSpecializations[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
+  const { data = [], isPending: loading, error } = useVendorsQuery();
+  return {
+    vendors: data,
+    loading,
+    error: (error as PostgrestError | null) ?? null,
+  };
+}
 
-  useEffect(() => {
-    async function fetchVendors() {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("vendors")
-        .select(
-          `*,
-            vendor_specialities (
-              speciality_id,
-              speciality:specialities (
-                id,
-                name
-              )
-            )
-          `,
-        )
-        .neq("status", "merged");
-
-      if (error) {
-        console.error("error fetching vendors", error);
-        setError(error);
-      } else {
-        setVendors((data ?? []) as unknown as VendorsWithSpecializations[]);
-      }
-
-      setLoading(false);
-    }
-    fetchVendors();
-  }, []); // runs once on mount
-
-  return { vendors, loading, error };
+async function fetchVendorsNoUser(): Promise<Vendor[]> {
+  const { data, error } = await supabase
+    .from("vendors")
+    .select("*")
+    .is("user_id", null);
+  if (error) throw error;
+  return data ?? [];
 }
 
 export function useVendorsNoUser() {
-  const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<PostgrestError | null>(null);
-
-  useEffect(() => {
-    async function fetchVendors() {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("vendors")
-        .select("*")
-        .is("user_id", null);
-
-      if (error) {
-        console.error("error fetching vendors", error);
-        setError(error);
-      } else {
-        setVendors(data ?? []);
-      }
-
-      setLoading(false);
-    }
-
-    fetchVendors();
-  }, []);
-
-  return { vendors, loading, error };
+  const {
+    data = [],
+    isPending: loading,
+    error,
+  } = useQuery({
+    queryKey: ["vendors-no-user"],
+    queryFn: fetchVendorsNoUser,
+  });
+  return {
+    vendors: data,
+    loading,
+    error: (error as PostgrestError | null) ?? null,
+  };
 }
