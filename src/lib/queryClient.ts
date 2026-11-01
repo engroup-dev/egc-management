@@ -25,6 +25,12 @@ export function createQueryClient(): QueryClient {
       queries: {
         staleTime: TIERS.B.staleTime,
         gcTime: TIERS.B.gcTime,
+        // Pages that have been loaded this session (or hydrated from disk on
+        // relaunch) never refetch on remount. Mutations still invalidate
+        // their own data, and realtime channels invalidate what they cover.
+        // Everything else serves from cache until the user explicitly
+        // refreshes or quits the app.
+        refetchOnMount: false,
         refetchOnWindowFocus: false,
         refetchOnReconnect: true,
         retry: 2,
