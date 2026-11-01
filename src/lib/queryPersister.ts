@@ -24,45 +24,40 @@ export function createIDBPersister(userId: string) {
   });
 }
 
-// Opt-in whitelist of query-key prefixes we persist. Everything else
-// stays in-memory only: tasks module, infinite scrolls (notifications,
-// logs), money/finance reads, and giant list queries that are either
-// too big or churn too much to be worth hydrating stale.
-const PERSIST_PREFIXES: ReadonlyArray<string> = [
-  // Lookups / catalogs
-  "map-types",
-  "permission-catalog",
-  "job-roles",
-  "project-roles-catalog",
-  "departments",
-  "assignable-people",
-  "assignable-staff",
-  "assignable-contractors",
-  "task-type-options",
-  "project-options",
-  "department-options",
-  "breadcrumb-label",
-  "units",
-  // Drawings per project (folders only; versions/notices stay in memory)
-  "project-drawings",
-  // Website CMS content
-  "website",
-];
-
-// Keys that explicitly must NOT be persisted even if they share a prefix
-// with the whitelist. Mostly tasks module slices that happen to share a
-// head word with something allowed above.
-const EXPLICIT_BLOCK: ReadonlyArray<string> = [
+// Blocklist model. We persist *everything* by default so visited screens
+// paint instantly on relaunch, and only exclude the handful of key heads
+// that must stay fresh (money), are infinite / high-churn (feeds, logs),
+// are security-sensitive per-user (effective permissions), or are
+// ephemeral by nature (schedule preview). The task module is deliberately
+// persisted: a brief stale snapshot on relaunch is acceptable because
+// Supabase realtime invalidates stale rows within a second.
+const NEVER_PERSIST: ReadonlySet<string> = new Set([
+  // Money — must stay effectively realtime
+  "agreements",
+  "project-agreements",
+  "agreement-detail",
+  "project-distributions",
+  "distribution-batches",
+  "distribution-candidates",
+  "payroll",
+  "company-finance",
+  "project-counters",
+  // Infinite / high-churn
+  "notifications",
+  "logs",
+  "activity-log",
+  // Security-sensitive per-user
   "my-effective-permissions",
   "effective-permissions",
   "inherited-grants",
-];
+  // Ephemeral form previews
+  "schedule-preview",
+]);
 
 export function shouldPersistQuery(query: Query): boolean {
   const key = query.queryKey;
   if (!Array.isArray(key) || key.length === 0) return false;
   const head = key[0];
   if (typeof head !== "string") return false;
-  if (EXPLICIT_BLOCK.includes(head)) return false;
-  return PERSIST_PREFIXES.includes(head);
+  return !NEVER_PERSIST.has(head);
 }
