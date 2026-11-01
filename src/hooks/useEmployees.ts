@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../lib/supabaseClient";
 import { permissionsDb } from "../lib/permissionsDb";
 import { Employees, Projects } from "../types/global.type";
@@ -9,29 +10,24 @@ import {
 import { PostgrestError } from "@supabase/supabase-js";
 
 export function useEmployees() {
-  const [employees, setemployees] = useState<Employees[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<PostgrestError | null>(null);
-
-  useEffect(() => {
-    async function fetchemployees() {
-      setLoading(true);
+  const {
+    data = [],
+    isPending: loading,
+    error,
+  } = useQuery({
+    queryKey: ["employees"],
+    queryFn: async () => {
       const { data, error } = await supabase.from("employees").select("*");
+      if (error) throw error;
+      return (data ?? []) as Employees[];
+    },
+  });
 
-      if (error) {
-        console.error("error fetching employyes", error);
-        setError(error);
-      } else {
-        setemployees(data ?? []);
-      }
-
-      setLoading(false);
-    }
-
-    fetchemployees();
-  }, []); // runs once on mount
-
-  return { employees, loading, error };
+  return {
+    employees: data,
+    loading,
+    error: (error as PostgrestError | null) ?? null,
+  };
 }
 
 export interface EmployeeSummary {
