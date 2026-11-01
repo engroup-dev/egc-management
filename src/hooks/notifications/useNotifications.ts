@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuthUserId } from "../permissions/useCan";
 import {
@@ -38,6 +38,7 @@ export function useNotificationFeed(opts: { unreadOnly?: boolean; category?: str
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) => listNotifications({ before: pageParam, unreadOnly, category, limit: pageSize }),
     getNextPageParam: (last) => (last.length < pageSize ? undefined : last[last.length - 1].created_at),
+    placeholderData: keepPreviousData,
   });
 }
 
