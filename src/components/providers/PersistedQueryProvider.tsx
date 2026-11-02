@@ -81,6 +81,12 @@ export function PersistedQueryProvider({
       })
       .finally(() => {
         if (cancelled) return;
+        // Everything restored from disk is shown as-is but treated as
+        // stale, so each screen re-checks it in the background the first
+        // time it is viewed this run. Several forms still "refresh" by
+        // reloading the window; without this, a reload within a query's
+        // staleTime would restore the pre-edit data and keep showing it.
+        client.invalidateQueries({ refetchType: "none" });
         unsubscribe = persistQueryClientSubscribe(options);
         setRestoredFor(userId);
       });
