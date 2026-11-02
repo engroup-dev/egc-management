@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
+import { TIERS } from "../../lib/queryClient";
 import { supabase } from "../../lib/supabaseClient";
 import { PostgrestError } from "@supabase/supabase-js";
 import { Projects } from "../../types/global.type";
@@ -135,79 +136,76 @@ export function calcDistribution(
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
+export const projectsDistributeKey = ["projects", "distribute"] as const;
+
+async function fetchDistributeProjects(): Promise<DistributionProject[]> {
+  const { data, error } = await supabase
+    .from("projects")
+    .select(
+      `
+      *,
+      project_percentage(*),
+      project_distributions(
+      id,
+      percentage,
+      employee:employees(
+        id,
+        first_name,
+        last_name,
+        bank_name,
+        bank_account_number
+      )
+    )
+    `,
+    )
+    .not(
+      "id",
+      "in",
+      `(5451aaae-c632-46f4-9913-8670cffcc8e7,e0a50575-bcc1-474a-98b8-8f57770a14fa,eed51009-4cfa-497c-87a1-cbf5a756f3da,f2d38514-32e0-4eeb-b6cd-fcdbed6a93ab)`,
+    )
+    // The exclusion of project role c7823151-2290-4861-a383-5e00a78128ce
+    // that used to sit here is GONE, by decision: project_distributions
+    // has no project role, so the filter cannot be expressed on the new
+    // table. Anyone holding a row in project_distributions is now paid.
+    // If people were being kept out of payout runs by that role, they
+    // must be removed from project_distributions instead.
+    .order("serial_number", { ascending: true });
+
+  // .in("id", [
+  //   "5451aaae-c632-46f4-9913-8670cffcc8e7",
+  //   "eed51009-4cfa-497c-87a1-cbf5a756f3da",
+  //   "f2d38514-32e0-4eeb-b6cd-fcdbed6a93ab",
+  // ])
+
+  if (error) throw error;
+
+  const filtered = (data ?? []).filter((p) =>
+    p.project_percentage?.some(
+      (pp: ProjectPercentageRow) => Number(pp.period_percentage) > 0,
+    ),
+  );
+
+  // Cast through unknown: the generated Database types predate Phase 1,
+  // so supabase-js resolves the project_distributions embed to a
+  // SelectQueryError and refuses the direct cast. Re-run `npm run types`
+  // once Phase 1 is in the generated schema and this can go back to a
+  // plain `as DistributionProject[]`. Same reason src/lib/permissionsDb.ts
+  // exists — that client cannot be used here because this one query spans
+  // projects, project_percentage and employees as well.
+  return filtered as unknown as DistributionProject[];
+}
+
+// Exported so the background prefetcher can warm this screen.
+export const projectsDistributeQueryOptions = () =>
+  queryOptions({
+    queryKey: projectsDistributeKey,
+    queryFn: fetchDistributeProjects,
+    ...TIERS.C,
+  });
+
 export function useProjectsDistribute() {
-  const [projects, setProjects] = useState<DistributionProject[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
-
-  useEffect(() => {
-    fetchProjects();
-  }, []);
-
-  const fetchProjects = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { data, error } = await supabase
-        .from("projects")
-        .select(
-          `
-          *,
-          project_percentage(*),
-          project_distributions(
-          id,
-          percentage,
-          employee:employees(
-            id,
-            first_name,
-            last_name,
-            bank_name,
-            bank_account_number
-          )
-        )
-        `,
-        )
-        .not(
-          "id",
-          "in",
-          `(5451aaae-c632-46f4-9913-8670cffcc8e7,e0a50575-bcc1-474a-98b8-8f57770a14fa,eed51009-4cfa-497c-87a1-cbf5a756f3da,f2d38514-32e0-4eeb-b6cd-fcdbed6a93ab)`,
-        )
-        // The exclusion of project role c7823151-2290-4861-a383-5e00a78128ce
-        // that used to sit here is GONE, by decision: project_distributions
-        // has no project role, so the filter cannot be expressed on the new
-        // table. Anyone holding a row in project_distributions is now paid.
-        // If people were being kept out of payout runs by that role, they
-        // must be removed from project_distributions instead.
-        .order("serial_number", { ascending: true });
-
-      // .in("id", [
-      //   "5451aaae-c632-46f4-9913-8670cffcc8e7",
-      //   "eed51009-4cfa-497c-87a1-cbf5a756f3da",
-      //   "f2d38514-32e0-4eeb-b6cd-fcdbed6a93ab",
-      // ])
-
-      if (error) throw error;
-
-      const filtered = (data ?? []).filter((p) =>
-        p.project_percentage?.some(
-          (pp: ProjectPercentageRow) => Number(pp.period_percentage) > 0,
-        ),
-      );
-
-      // Cast through unknown: the generated Database types predate Phase 1,
-      // so supabase-js resolves the project_distributions embed to a
-      // SelectQueryError and refuses the direct cast. Re-run `npm run types`
-      // once Phase 1 is in the generated schema and this can go back to a
-      // plain `as DistributionProject[]`. Same reason src/lib/permissionsDb.ts
-      // exists — that client cannot be used here because this one query spans
-      // projects, project_percentage and employees as well.
-      setProjects(filtered as unknown as DistributionProject[]);
-    } catch (err) {
-      setError(err as PostgrestError);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const queryClient = useQueryClient();
+  const query = useQuery(projectsDistributeQueryOptions());
 
   const submitDistribution = async (
     projects: DistributionProject[],
@@ -473,14 +471,23 @@ export function useProjectsDistribute() {
         success: false,
         error: err instanceof Error ? err.message : "حدث خطأ غير متوقع",
       };
+    } finally {
+      // Even a run that failed part-way has moved balances, so refresh
+      // every distribution, company-account and project-balance view.
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
+      void queryClient.invalidateQueries({ queryKey: ["projects-list"] });
+      void queryClient.invalidateQueries({ queryKey: ["company"] });
     }
   };
 
   return {
-    projects,
-    loading,
-    error,
+    projects: query.data ?? null,
+    loading: query.isPending,
+    refreshing: query.isFetching && !query.isPending,
+    error: query.error as PostgrestError | null,
     submitDistribution,
-    refetch: fetchProjects,
+    refetch: async () => {
+      await query.refetch();
+    },
   };
 }

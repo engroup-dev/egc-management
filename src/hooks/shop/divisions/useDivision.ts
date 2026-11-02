@@ -1,65 +1,77 @@
 // hooks/shop/divisions/useDivision.ts
 // Single-record fetch + update by id, used by the show/edit parent
-import { useState, useEffect } from "react";
+import { useState, useCallback, SetStateAction } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PostgrestError } from "@supabase/supabase-js";
 import { Categories, Divisions } from "../../../types/global.type";
 import { supabase } from "../../../lib/supabaseClient";
+import { shopDivisionsKey } from "./useDivisions";
+
+type DivisionData = {
+  division: Divisions | null;
+  categories: Categories[] | null;
+};
+
+export const shopDivisionKey = (id: string) =>
+  ["shop", "division", id] as const;
+
+async function fetchShopDivision(id: string): Promise<DivisionData> {
+  const { data, error } = await supabase
+    .from("shop_divisions")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (error) {
+    console.error("Error fetching shop division:", error);
+    throw error;
+  }
+
+  const { data: categories, error: categoryError } = await supabase
+    .from("shop_categories")
+    .select("*")
+    .eq("division_id", id);
+
+  if (categoryError) {
+    console.error("Error fetching categories:", categoryError);
+    throw categoryError;
+  }
+
+  return { division: data, categories };
+}
+
+export const shopDivisionQueryOptions = (id: string) =>
+  queryOptions({
+    queryKey: shopDivisionKey(id),
+    queryFn: () => fetchShopDivision(id),
+    enabled: !!id,
+  });
 
 export function useDivision(id: string) {
-  const [division, setDivision] = useState<Divisions | null>(null);
-  const [categories, setCategories] = useState<Categories[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
+  const queryClient = useQueryClient();
+  const query = useQuery(shopDivisionQueryOptions(id));
+  const [mutating, setMutating] = useState(false);
+  const [mutationError, setMutationError] = useState<PostgrestError | null>(
+    null,
+  );
 
-  useEffect(() => {
-    if (!id) return;
-
-    async function fetchDivision() {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const { data, error: fetchError } = await supabase
-          .from("shop_divisions")
-          .select("*")
-          .eq("id", id)
-          .single();
-
-        if (fetchError) {
-          console.error("Error fetching shop division:", fetchError);
-          setError(fetchError);
-          return;
-        }
-
-        const { data: categoryData, error: categoryError } = await supabase
-          .from("shop_categories")
-          .select("*")
-          .eq("division_id", id);
-
-        if (categoryError) {
-          console.error("Error fetching categories:", categoryError);
-          setError(categoryError);
-          return;
-        }
-
-        setCategories(categoryData);
-        setDivision(data);
-      } catch (err) {
-        console.error("Unexpected error fetching shop division:", err);
-        setError(err as PostgrestError);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchDivision();
-  }, [id]);
+  const setDivision = useCallback(
+    (value: SetStateAction<Divisions | null>) =>
+      queryClient.setQueryData<DivisionData>(shopDivisionKey(id), (prev) => {
+        const current = prev?.division ?? null;
+        return {
+          division: typeof value === "function" ? value(current) : value,
+          categories: prev?.categories ?? null,
+        };
+      }),
+    [queryClient, id],
+  );
 
   const updateDivision = async (
     updates: Partial<Omit<Divisions, "id" | "created_at">>,
   ) => {
-    setLoading(true);
-    setError(null);
+    setMutating(true);
+    setMutationError(null);
 
     try {
       const { data, error: updateError } = await supabase
@@ -71,27 +83,25 @@ export function useDivision(id: string) {
 
       if (updateError) {
         console.error("Error updating shop division:", updateError);
-        setError(updateError);
+        setMutationError(updateError);
         return null;
       }
 
       setDivision(data);
+      queryClient.invalidateQueries({ queryKey: ["shop"] });
       return data;
     } catch (err) {
       console.error("Unexpected error updating shop division:", err);
-      setError(err as PostgrestError);
+      setMutationError(err as PostgrestError);
       return null;
     } finally {
-      setLoading(false);
+      setMutating(false);
     }
   };
 
-  // hooks/shop/divisions/useDivision.ts
-  // ... keep everything as-is, just add this function before the return
-
   const deleteDivision = async () => {
-    setLoading(true);
-    setError(null);
+    setMutating(true);
+    setMutationError(null);
 
     try {
       const { error: deleteError } = await supabase
@@ -101,26 +111,34 @@ export function useDivision(id: string) {
 
       if (deleteError) {
         console.error("Error deleting shop division:", deleteError);
-        setError(deleteError);
+        setMutationError(deleteError);
         return false;
       }
 
       setDivision(null);
+      queryClient.setQueryData<Divisions[]>(shopDivisionsKey, (prev) =>
+        prev?.filter((d) => d.id !== id),
+      );
+      // Mark only: refetching the deleted row now would just error.
+      queryClient.invalidateQueries({
+        queryKey: ["shop"],
+        refetchType: "none",
+      });
       return true;
     } catch (err) {
       console.error("Unexpected error deleting shop division:", err);
-      setError(err as PostgrestError);
+      setMutationError(err as PostgrestError);
       return false;
     } finally {
-      setLoading(false);
+      setMutating(false);
     }
   };
 
   return {
-    division,
-    categories,
-    loading,
-    error,
+    division: query.data?.division ?? null,
+    categories: query.data?.categories ?? null,
+    loading: (query.isPending && !!id) || mutating,
+    error: mutationError ?? (query.error as PostgrestError | null),
     setDivision,
     updateDivision,
     deleteDivision,

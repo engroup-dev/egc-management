@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { PostgrestError } from "@supabase/supabase-js";
 import { supabase } from "../../../lib/supabaseClient";
 
@@ -28,47 +28,53 @@ export interface OrderDetails {
   }[];
 }
 
+export const shopOrderKey = (orderId: string | undefined) =>
+  ["shop", "order", orderId ?? ""] as const;
+
+async function fetchShopOrder(orderId: string): Promise<OrderDetails> {
+  const { data, error } = await supabase
+    .from("shop_orders")
+    .select(
+      `
+      id, status, note, total_price, vendor_ref, created_at,
+      quoted_at, approved_at, arrived_at, cancelled_at, rejected_at,
+      project:projects ( id, name, code ),
+      created_by_user:users!shop_orders_created_by_fkey ( first_name, last_name ),
+      approved_by_user:users!shop_orders_approved_by_fkey ( first_name, last_name ),
+      vendor:vendors ( id, vendor_name ),
+      items:shop_order_items ( id, name, quantity, quoted_unit_price, quoted_total, notes )
+    `,
+    )
+    .eq("id", orderId)
+    .single();
+
+  if (error) {
+    console.error("Error fetching order details:", error);
+    throw error;
+  }
+  return data as unknown as OrderDetails;
+}
+
+export const shopOrderQueryOptions = (orderId: string | undefined) =>
+  queryOptions({
+    queryKey: shopOrderKey(orderId),
+    queryFn: () => fetchShopOrder(orderId as string),
+    enabled: !!orderId,
+  });
+
 export function useOrderDetails(orderId: string | undefined) {
-  const [order, setOrder] = useState<OrderDetails | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<PostgrestError | Error | null>(null);
+  const query = useQuery(shopOrderQueryOptions(orderId));
 
-  const fetchOrder = useCallback(async () => {
+  const refetch = async () => {
     if (!orderId) return;
-    setLoading(true);
-    setError(null);
+    await query.refetch();
+  };
 
-    try {
-      const { data, error: orderError } = await supabase
-        .from("shop_orders")
-        .select(
-          `
-          id, status, note, total_price, vendor_ref, created_at,
-          quoted_at, approved_at, arrived_at, cancelled_at, rejected_at,
-          project:projects ( id, name, code ),
-          created_by_user:users!shop_orders_created_by_fkey ( first_name, last_name ),
-          approved_by_user:users!shop_orders_approved_by_fkey ( first_name, last_name ),
-          vendor:vendors ( id, vendor_name ),
-          items:shop_order_items ( id, name, quantity, quoted_unit_price, quoted_total, notes )
-        `,
-        )
-        .eq("id", orderId)
-        .single();
-
-      if (orderError) throw orderError;
-
-      setOrder(data as unknown as OrderDetails);
-    } catch (err) {
-      console.error("Error fetching order details:", err);
-      setError(err as PostgrestError | Error);
-    } finally {
-      setLoading(false);
-    }
-  }, [orderId]);
-
-  useEffect(() => {
-    fetchOrder();
-  }, [fetchOrder]);
-
-  return { order, loading, error, refetch: fetchOrder };
+  // Stays true without an id, as before.
+  return {
+    order: query.data ?? null,
+    loading: query.isPending,
+    error: query.error as PostgrestError | Error | null,
+    refetch,
+  };
 }

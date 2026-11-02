@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabaseClient";
 
 // =====================================================================
@@ -36,8 +36,9 @@ export interface JobRole {
   holder_count: number;
 }
 
-export function useJobRoles() {
-  return useQuery<JobRole[]>({
+// Exported for the background prefetcher (src/lib/prefetch).
+export const jobRolesQueryOptions = () =>
+  queryOptions<JobRole[]>({
     queryKey: JOB_ROLES_KEY,
     queryFn: async () => {
       const { data: roles, error } = await supabase
@@ -70,6 +71,9 @@ export function useJobRoles() {
         }));
     },
   });
+
+export function useJobRoles() {
+  return useQuery(jobRolesQueryOptions());
 }
 
 export function useJobRole(id: string | undefined) {

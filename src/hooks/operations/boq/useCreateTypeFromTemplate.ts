@@ -1,9 +1,11 @@
 import { PostgrestError } from "@supabase/supabase-js";
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useAuth } from "../../useAuth";
 import { supabase } from "../../../lib/supabaseClient";
 
 export function useCreateTypeFromTemplate() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
   const { user } = useAuth();
@@ -38,6 +40,9 @@ export function useCreateTypeFromTemplate() {
       setError(error);
       return { data: null, error };
     }
+    // Callers navigate straight to the new type, whose name comes from the
+    // cached types list — refresh it so the new row is there.
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     return { data, error: null };
   }
 

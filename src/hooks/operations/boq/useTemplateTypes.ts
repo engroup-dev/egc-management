@@ -1,5 +1,6 @@
 import { PostgrestError } from "@supabase/supabase-js";
-import { useCallback, useEffect, useState } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Dispatch, SetStateAction, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import { computeNextSortOrder } from "./sortOrder";
 
@@ -10,47 +11,55 @@ export interface TemplateType {
   created_at: string;
 }
 
+export const boqTemplateTypesKey = ["boq", "template-types"] as const;
+
+async function fetchTemplateTypes(): Promise<TemplateType[]> {
+  const { data, error } = await supabase
+    .schema("boq")
+    .from("template_types")
+    .select("*")
+    .order("sort_order", { ascending: true });
+
+  if (error) {
+    console.error("error fetching template types", error);
+    throw error;
+  }
+  return data ?? [];
+}
+
+// Exported so the background prefetcher can warm this screen.
+export const boqTemplateTypesQueryOptions = () =>
+  queryOptions({
+    queryKey: boqTemplateTypesKey,
+    queryFn: fetchTemplateTypes,
+  });
+
 export function useTemplateTypes() {
-  const [templateTypes, setTemplateTypes] = useState<TemplateType[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
+  const queryClient = useQueryClient();
+  const query = useQuery(boqTemplateTypesQueryOptions());
 
-  const fetchTemplateTypes = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .schema("boq")
-        .from("template_types")
-        .select("*")
-        .order("sort_order", { ascending: true });
-
-      if (error) {
-        console.error("error fetching template types", error);
-        setError(error);
-      } else {
-        setTemplateTypes(data ?? []);
-      }
-    } catch (err) {
-      console.error("unexpected error fetching template types", err);
-      setError(err as PostgrestError);
-    }
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    fetchTemplateTypes();
-  }, [fetchTemplateTypes]);
+  // Callers apply optimistic reorders through this, so it writes the cache.
+  const setTemplateTypes: Dispatch<SetStateAction<TemplateType[]>> = (
+    action,
+  ) => {
+    queryClient.setQueryData<TemplateType[]>(boqTemplateTypesKey, (prev) =>
+      typeof action === "function" ? action(prev ?? []) : action,
+    );
+  };
 
   return {
-    templateTypes,
+    templateTypes: query.data ?? [],
     setTemplateTypes,
-    loading,
-    error,
-    refetch: fetchTemplateTypes,
+    loading: query.isPending,
+    error: query.error as PostgrestError | null,
+    refetch: async () => {
+      await query.refetch();
+    },
   };
 }
 
 export function useCreateTemplateType() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
 
@@ -77,6 +86,7 @@ export function useCreateTemplateType() {
       setError(error);
       return { data: null, error };
     }
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     return { data, error: null };
   }
 
@@ -84,6 +94,7 @@ export function useCreateTemplateType() {
 }
 
 export function useUpdateTemplateType() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
 
@@ -106,6 +117,7 @@ export function useUpdateTemplateType() {
       setError(error);
       return { error };
     }
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     return { error: null };
   }
 
@@ -113,6 +125,7 @@ export function useUpdateTemplateType() {
 }
 
 export function useDeleteTemplateType() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
 
@@ -173,6 +186,7 @@ export function useDeleteTemplateType() {
       setError(error);
       return { error };
     }
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     return { error: null };
   }
 

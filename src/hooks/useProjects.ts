@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabaseClient";
 import type { Database } from "../lib/supabase";
 import { Projects } from "../types/global.type";
@@ -9,7 +9,7 @@ import { FullProject } from "../types/extended.type";
 const PROJECTS_LIST_KEY = ["projects-list"] as const;
 const projectDetailKey = (id: string) => ["projects-detail", id] as const;
 
-async function fetchProjectsList(): Promise<FullProject[]> {
+export async function fetchProjectsList(): Promise<FullProject[]> {
   const { data, error } = await supabase
     .from("projects")
     .select("*, project_balances(*), project_percentage(*), accounts(*)")
@@ -17,6 +17,10 @@ async function fetchProjectsList(): Promise<FullProject[]> {
   if (error) throw error;
   return (data ?? []) as FullProject[];
 }
+
+// Exported for the background prefetcher (src/lib/prefetch).
+export const projectsListQueryOptions = () =>
+  queryOptions({ queryKey: PROJECTS_LIST_KEY, queryFn: fetchProjectsList });
 
 export function useProjects() {
   const queryClient = useQueryClient();
@@ -28,10 +32,7 @@ export function useProjects() {
     isPending: fetchLoading,
     error: fetchError,
     refetch,
-  } = useQuery({
-    queryKey: PROJECTS_LIST_KEY,
-    queryFn: fetchProjectsList,
-  });
+  } = useQuery(projectsListQueryOptions());
 
   const loading = fetchLoading || mutating;
   const error = mutationError ?? (fetchError as Error | null) ?? null;

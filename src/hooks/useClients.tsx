@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabaseClient";
-import { Clients } from "../types/global.type";
+import { Clients, Projects } from "../types/global.type";
 import { ClientFormValues } from "../types/schema/clients.schema";
 import { adminCreateUser } from "../lib/adminApi";
 import { PostgrestError } from "@supabase/supabase-js";
@@ -9,31 +10,34 @@ import { PostgrestError } from "@supabase/supabase-js";
 // constant so they cannot drift apart.
 const CLIENT_ROLE_ID = "803c44ac-0af1-4586-81a2-67e1bc7eb7ef";
 
+export const crmClientsKey = ["crm", "clients"] as const;
+
+async function fetchClients(): Promise<Clients[]> {
+  const { data, error } = await supabase.from("clients").select("*");
+  if (error) {
+    console.error("error fetching clients", error);
+    throw error;
+  }
+  return data ?? [];
+}
+
+// Exported so the background prefetcher can warm this screen.
+export const crmClientsQueryOptions = () =>
+  queryOptions({ queryKey: crmClientsKey, queryFn: fetchClients });
+
 export function useClients() {
-  const [clients, setClients] = useState<Clients[]>([]);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
+  const query = useQuery(crmClientsQueryOptions());
+  // NewClientForm reads `loading` / `error` for its own submit.
+  const [mutating, setMutating] = useState(false);
   // PostgrestError / AuthError / Error: the screens only read .message
-  const [error, setError] = useState<{ message: string } | null>(null);
-
-  const fetchClients = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const { data, error } = await supabase.from("clients").select("*");
-
-    if (error) {
-      console.error("error fetching clients", error);
-      setError(error);
-      setClients([]);
-    } else {
-      setClients(data);
-    }
-
-    setLoading(false);
-  }, []);
+  const [mutationError, setMutationError] = useState<{
+    message: string;
+  } | null>(null);
 
   const addClient = useCallback(async (payload: ClientFormValues) => {
-    setLoading(true);
-    setError(null);
+    setMutating(true);
+    setMutationError(null);
 
     try {
       let userId: string | null = null;
@@ -63,8 +67,8 @@ export function useClients() {
 
         if (userError) {
           console.error("Error creating auth user:", userError);
-          setError(userError);
-          setLoading(false);
+          setMutationError(userError);
+          setMutating(false);
           return { data: null, error: userError };
         }
 
@@ -89,8 +93,8 @@ export function useClients() {
 
           if (userRoleError) {
             console.error("Error assigning client role:", userRoleError);
-            setError(userRoleError);
-            setLoading(false);
+            setMutationError(userRoleError);
+            setMutating(false);
             return { data: null, error: userRoleError };
           }
         }
@@ -107,8 +111,8 @@ export function useClients() {
 
       if (roleError) {
         console.error("error fetching role", roleError);
-        setError(roleError);
-        setLoading(false);
+        setMutationError(roleError);
+        setMutating(false);
         return { data: null, error: roleError };
       }
 
@@ -136,8 +140,8 @@ export function useClients() {
           .maybeSingle();
         if (existingError) {
           console.error("error looking up the client row", existingError);
-          setError(existingError);
-          setLoading(false);
+          setMutationError(existingError);
+          setMutating(false);
           return { data: null, error: existingError };
         }
         existingClientId = existing?.id ?? null;
@@ -154,8 +158,8 @@ export function useClients() {
 
       if (error) {
         console.error("error inserting client", error);
-        setError(error);
-        setLoading(false);
+        setMutationError(error);
+        setMutating(false);
         return { data: null, error };
       }
 
@@ -169,55 +173,96 @@ export function useClients() {
 
       if (numberUpdateError) {
         console.error("error updating role number", numberUpdateError);
-        setError(numberUpdateError);
-        setLoading(false);
+        setMutationError(numberUpdateError);
+        setMutating(false);
         return { data: null, error: numberUpdateError };
       }
 
-      setLoading(false);
+      setMutating(false);
+      queryClient.invalidateQueries({ queryKey: ["crm"] });
       return { data: data as Clients, error: null };
     } catch (err) {
       console.error("unexpected error inserting client", err);
-      setError(err instanceof Error ? err : new Error(String(err)));
-      setLoading(false);
+      setMutationError(err instanceof Error ? err : new Error(String(err)));
+      setMutating(false);
       return { data: null, error: err };
     }
-  }, []);
+  }, [queryClient]);
 
-  useEffect(() => {
-    fetchClients();
-  }, [fetchClients]);
+  const { refetch } = query;
+  const refresh = useCallback(async () => {
+    await refetch();
+  }, [refetch]);
 
-  const refresh = useCallback(() => fetchClients(), [fetchClients]);
-
-  return { clients, loading, error, refresh, addClient };
+  return {
+    clients: query.data ?? [],
+    loading: query.isPending || mutating,
+    error: mutationError ?? query.error,
+    refresh,
+    addClient,
+  };
 }
 
+export const crmClientKey = (id: string) => ["crm", "client", id] as const;
+
+async function fetchClient(id: string): Promise<Clients | null> {
+  const { data, error } = await supabase
+    .from("clients")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (error) {
+    console.error("error fetching clients", error);
+    throw error;
+  }
+  return data ?? null;
+}
+
+export const crmClientQueryOptions = (id: string) =>
+  queryOptions({
+    queryKey: crmClientKey(id),
+    queryFn: () => fetchClient(id),
+    enabled: !!id,
+  });
+
 export function useClient(id: string) {
-  const [client, setClient] = useState<Clients | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<PostgrestError>();
+  const query = useQuery(crmClientQueryOptions(id));
+  return {
+    client: query.data ?? null,
+    loading: query.isPending,
+    error: (query.error as PostgrestError | null) ?? undefined,
+  };
+}
 
-  useEffect(() => {
-    async function fetchClients() {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("clients")
-        .select("*")
-        .eq("id", id)
-        .single();
+export const crmClientProjectsKey = (clientId: string | undefined) =>
+  ["crm", "client-projects", clientId ?? ""] as const;
 
-      if (error) {
-        console.error("error fetching clients", error);
-        setError(error);
-      } else {
-        setClient(data ?? null);
-      }
+async function fetchClientProjects(clientId: string): Promise<Projects[]> {
+  const { data, error } = await supabase
+    .from("projects")
+    .select("*")
+    .eq("client_id", clientId)
+    .order("created_at", { ascending: false });
+  if (error) {
+    console.error("Error fetching projects:", error);
+    throw error;
+  }
+  return data ?? [];
+}
 
-      setLoading(false);
-    }
+export const crmClientProjectsQueryOptions = (clientId: string | undefined) =>
+  queryOptions({
+    queryKey: crmClientProjectsKey(clientId),
+    queryFn: () => fetchClientProjects(clientId as string),
+    enabled: !!clientId,
+  });
 
-    fetchClients();
-  }, [id]); // runs once on mount
-  return { client, loading, error };
+// The client's projects on ClientDetailPage. A failed load shows the empty
+// list, as it did when this lived inline in the page.
+export function useClientProjects(clientId: string | undefined) {
+  const query = useQuery(crmClientProjectsQueryOptions(clientId));
+  return {
+    projects: query.data ?? [],
+    loadingProjects: query.isPending,
+  };
 }

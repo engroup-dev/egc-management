@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import {
   createGpaTier,
   createUniversity,
@@ -20,36 +21,51 @@ import type {
   UniversityTier,
 } from "../../types/hr.type";
 
+interface ScoringConfig {
+  universityTiers: UniversityTier[];
+  universities: University[];
+  gpaTiers: GpaTier[];
+  experienceScores: ExperienceLevelScore[];
+}
+
+export const hrScoringConfigKey = ["hr", "scoring-config"] as const;
+
+async function fetchScoringConfig(): Promise<ScoringConfig> {
+  const [tiers, unis, gpa, exp] = await Promise.all([
+    listUniversityTiers(),
+    listUniversities(),
+    listGpaTiers(),
+    listExperienceLevelScores(),
+  ]);
+  const firstError = tiers.error ?? unis.error ?? gpa.error ?? exp.error;
+  if (firstError) {
+    console.error("Error fetching scoring config:", firstError);
+    throw firstError;
+  }
+  return {
+    universityTiers: tiers.data ?? [],
+    universities: unis.data ?? [],
+    gpaTiers: gpa.data ?? [],
+    experienceScores: exp.data ?? [],
+  };
+}
+
+// Exported so the background prefetcher can warm this screen.
+export const hrScoringConfigQueryOptions = () =>
+  queryOptions({ queryKey: hrScoringConfigKey, queryFn: fetchScoringConfig });
+
 /** Loads every scoring lookup once; each mutation refetches so the editors stay simple. */
 export function useScoringConfig() {
-  const [universityTiers, setUniversityTiers] = useState<UniversityTier[]>([]);
-  const [universities, setUniversities] = useState<University[]>([]);
-  const [gpaTiers, setGpaTiers] = useState<GpaTier[]>([]);
-  const [experienceScores, setExperienceScores] = useState<
-    ExperienceLevelScore[]
-  >([]);
-  const [loading, setLoading] = useState(true);
+  const query = useQuery(hrScoringConfigQueryOptions());
+  const { refetch: refetchQuery } = query;
+  const universityTiers = query.data?.universityTiers ?? [];
+  const universities = query.data?.universities ?? [];
+  const gpaTiers = query.data?.gpaTiers ?? [];
+  const experienceScores = query.data?.experienceScores ?? [];
 
   const refetch = useCallback(async () => {
-    setLoading(true);
-    const [tiers, unis, gpa, exp] = await Promise.all([
-      listUniversityTiers(),
-      listUniversities(),
-      listGpaTiers(),
-      listExperienceLevelScores(),
-    ]);
-    const firstError = tiers.error ?? unis.error ?? gpa.error ?? exp.error;
-    if (firstError) console.error("Error fetching scoring config:", firstError);
-    setUniversityTiers(tiers.data ?? []);
-    setUniversities(unis.data ?? []);
-    setGpaTiers(gpa.data ?? []);
-    setExperienceScores(exp.data ?? []);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
+    await refetchQuery();
+  }, [refetchQuery]);
 
   /** Runs a mutation, refetches on success, and reports success to the caller. */
   const run = useCallback(
@@ -73,7 +89,7 @@ export function useScoringConfig() {
     universities,
     gpaTiers,
     experienceScores,
-    loading,
+    loading: query.isPending,
     refetch,
     addUniversityTier: (name: string, score: number) =>
       run(createUniversityTier(name, score, nextOrder(universityTiers))),

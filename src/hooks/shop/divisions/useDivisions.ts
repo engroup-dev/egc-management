@@ -1,45 +1,45 @@
-import { useEffect, useState } from "react";
+import { useState, useCallback } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Divisions } from "../../../types/global.type";
 import { PostgrestError } from "@supabase/supabase-js";
 import { supabase } from "../../../lib/supabaseClient";
 import { ShopDivisionFormValues } from "../../../types/schema/shop/division.schema";
 
+export const shopDivisionsKey = ["shop", "divisions"] as const;
+
+async function fetchShopDivisions(): Promise<Divisions[]> {
+  const { data, error } = await supabase.from("shop_divisions").select("*");
+  if (error) {
+    console.error("Error fetching shop divisions:", error);
+    throw error;
+  }
+  return data ?? [];
+}
+
+// Exported so the background prefetcher can warm this screen.
+export const shopDivisionsQueryOptions = () =>
+  queryOptions({ queryKey: shopDivisionsKey, queryFn: fetchShopDivisions });
+
 export function useDivisions() {
-  const [divisions, setDivisions] = useState<Divisions[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
+  const queryClient = useQueryClient();
+  const query = useQuery(shopDivisionsQueryOptions());
+  // Forms read `loading` / `error` for their own submit.
+  const [mutating, setMutating] = useState(false);
+  const [mutationError, setMutationError] = useState<PostgrestError | null>(
+    null,
+  );
 
-  useEffect(() => {
-    async function fetchDivisions() {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const { data, error: rolesError } = await supabase
-          .from("shop_divisions")
-          .select("*");
-
-        if (rolesError) {
-          console.error("Error fetching shop divisions:", rolesError);
-          setError(rolesError);
-          return;
-        }
-
-        setDivisions(data || []);
-      } catch (err) {
-        console.error("Unexpected error fetching shop divisions:", err);
-        setError(err as PostgrestError);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchDivisions();
-  }, []);
+  const setActive = useCallback(
+    (id: string, isActive: boolean) =>
+      queryClient.setQueryData<Divisions[]>(shopDivisionsKey, (prev) =>
+        prev?.map((d) => (d.id === id ? { ...d, is_active: isActive } : d)),
+      ),
+    [queryClient],
+  );
 
   const addDivision = async (division: ShopDivisionFormValues) => {
-    setLoading(true);
-    setError(null);
+    setMutating(true);
+    setMutationError(null);
 
     try {
       const { data, error: insertError } = await supabase
@@ -50,31 +50,29 @@ export function useDivisions() {
 
       if (insertError) {
         console.error("Error adding shop division:", insertError);
-        setError(insertError);
+        setMutationError(insertError);
         return null;
       }
 
-      setDivisions((prev) => [...prev, data]);
+      queryClient.setQueryData<Divisions[]>(shopDivisionsKey, (prev) =>
+        prev ? [...prev, data] : prev,
+      );
+      queryClient.invalidateQueries({ queryKey: ["shop"] });
       return data;
     } catch (err) {
       console.error("Unexpected error adding shop division:", err);
-      setError(err as PostgrestError);
+      setMutationError(err as PostgrestError);
       return null;
     } finally {
-      setLoading(false);
+      setMutating(false);
     }
   };
 
-  // hooks/shop/divisions/useDivisions.ts
-  // ... keep existing fetch logic, add this:
-
   const toggleDivisionActive = async (id: string, isActive: boolean) => {
-    setError(null);
+    setMutationError(null);
 
     // optimistic update
-    setDivisions((prev) =>
-      prev.map((d) => (d.id === id ? { ...d, is_active: isActive } : d)),
-    );
+    setActive(id, isActive);
 
     try {
       const { data, error: updateError } = await supabase
@@ -86,24 +84,27 @@ export function useDivisions() {
 
       if (updateError) {
         console.error("Error toggling division status:", updateError);
-        setError(updateError);
+        setMutationError(updateError);
         // revert on failure
-        setDivisions((prev) =>
-          prev.map((d) => (d.id === id ? { ...d, is_active: !isActive } : d)),
-        );
+        setActive(id, !isActive);
         return null;
       }
 
+      queryClient.invalidateQueries({ queryKey: ["shop"] });
       return data;
     } catch (err) {
       console.error("Unexpected error toggling division status:", err);
-      setError(err as PostgrestError);
-      setDivisions((prev) =>
-        prev.map((d) => (d.id === id ? { ...d, is_active: !isActive } : d)),
-      );
+      setMutationError(err as PostgrestError);
+      setActive(id, !isActive);
       return null;
     }
   };
 
-  return { divisions, loading, error, addDivision, toggleDivisionActive };
+  return {
+    divisions: query.data ?? [],
+    loading: query.isPending || mutating,
+    error: mutationError ?? (query.error as PostgrestError | null),
+    addDivision,
+    toggleDivisionActive,
+  };
 }

@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
+import { useIsRestoring } from "@tanstack/react-query";
+import { useAuthUserId } from "../lib/authUser";
 import { HashRouter as Router, Routes, Route } from "react-router-dom";
-import { supabase } from "../lib/supabaseClient";
 import Dashboard from "./dashboard/dashboard";
 import LoginForm from "./auth/LoginForm";
 import MainMenu from "../pages/MainMenu";
@@ -26,26 +27,16 @@ import TasksRoutes from "./pages/TasksRoutes";
 import RequirePermission from "./auth/RequirePermission";
 import NotificationsPage from "../pages/notifications/NotificationsPage";
 import NotificationSettingsPage from "../pages/profile/NotificationSettingsPage";
+import BackgroundPrefetch from "./providers/BackgroundPrefetch";
 
 const AppRouter = () => {
-  const [session, setSession] = useState(false);
+  // Known synchronously from the stored session (src/lib/authUser.ts), so
+  // the first render already picks the right tree — no login-form flash
+  // on boot while an async getSession() resolves.
+  const { userId } = useAuthUserId();
+  const session = !!userId;
+  const isRestoring = useIsRestoring();
   const { refreshUser } = useAuth();
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(!!session);
-    });
-
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(!!session);
-      },
-    );
-
-    return () => {
-      authListener?.subscription?.unsubscribe();
-    };
-  }, []);
 
   useEffect(() => {
     if (!session) return; // Only refresh when logged in
@@ -91,98 +82,108 @@ const AppRouter = () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [session, refreshUser]);
 
+  // The on-disk cache for this user is still being read (typically well
+  // under 200 ms). Render a plain backdrop rather than mounting pages whose
+  // queries would show spinners for data that is about to appear.
+  if (isRestoring) {
+    return <div className="min-h-screen bg-background" dir="rtl" />;
+  }
+
   return (
-    <Routes>
-      {/* Public route */}
-      <Route path="/login" element={<LoginForm />} />
+    <>
+      {session && <BackgroundPrefetch />}
+      <Routes>
+        {/* Public route */}
+        <Route path="/login" element={<LoginForm />} />
 
-      {/* Protected routes with Layout wrapper */}
-      {session && (
-        <Route element={<RequirePasswordChange />}>
-          <Route element={<MainMenuLayout />}>
-            <Route path="/change-password" element={<ChangePasswordPage />} />
-            <Route path="/" element={<MainMenu />} />
-            <Route path="/dashboard" element={<Dashboard />} />
+        {/* Protected routes with Layout wrapper */}
+        {session && (
+          <Route element={<RequirePasswordChange />}>
+            <Route element={<MainMenuLayout />}>
+              <Route path="/change-password" element={<ChangePasswordPage />} />
+              <Route path="/" element={<MainMenu />} />
+              <Route path="/dashboard" element={<Dashboard />} />
 
-            {/* HR */}
-            <Route element={<RequirePermission permission="view_hr_section" />}>
-              <Route path="/hr/*" element={<HRRoutes />} />
-            </Route>
+              {/* HR */}
+              <Route element={<RequirePermission permission="view_hr_section" />}>
+                <Route path="/hr/*" element={<HRRoutes />} />
+              </Route>
 
-            {/* CRM */}
-            <Route path="/crm/*" element={<CRMRoutes />} />
+              {/* CRM */}
+              <Route path="/crm/*" element={<CRMRoutes />} />
 
-            {/* Supply Chain */}
-            <Route path="/supply-chain/*" element={<SupplyChainRoutes />} />
+              {/* Supply Chain */}
+              <Route path="/supply-chain/*" element={<SupplyChainRoutes />} />
 
-            {/* Projects */}
-            <Route path="/projects/*" element={<ProjectsRoutes />} />
+              {/* Projects */}
+              <Route path="/projects/*" element={<ProjectsRoutes />} />
 
-            {/* Finance */}
-            <Route
-              element={<RequirePermission permission="view_finance_section" />}
-            >
-              <Route path="/finance/*" element={<FinanceRoutes />} />
-            </Route>
-
-            <Route path="/profile" element={<ProfilePage />} />
-            <Route path="/profile/notifications" element={<NotificationSettingsPage />} />
-            <Route path="/notifications" element={<NotificationsPage />} />
-
-            {/* Settings */}
-            <Route
-              element={<RequirePermission permission="view_settings_section" />}
-            >
-              <Route path="/settings/*" element={<SettingsRoutes />} />
-            </Route>
-
-            {/* operations */}
-            <Route
-              element={
-                <RequirePermission permission="view_operations_section" />
-              }
-            >
-              <Route path="/operations/*" element={<OperationsRoutes />} />
-            </Route>
-
-            <Route
-              element={<RequirePermission permission="view_shops_section" />}
-            >
-              <Route path="/shops/*" element={<ShopsRoutes />} />
-            </Route>
-
-            <Route
-              element={<RequirePermission permission="view_company_section" />}
-            >
-              <Route path="/company/*" element={<CompanyRoutes />} />
-            </Route>
-            <Route
-              element={
-                <RequirePermission permission="view_execution_section" />
-              }
-            >
+              {/* Finance */}
               <Route
-                path="/execution-management/*"
-                element={<ExecutionManagementRoutes />}
-              />
-            </Route>
+                element={<RequirePermission permission="view_finance_section" />}
+              >
+                <Route path="/finance/*" element={<FinanceRoutes />} />
+              </Route>
 
-            {/* Tasks — section-level gate only (view_tasks_section,
-                granted to Admin only while the module is in testing).
-                Per-screen/action permissions inside it are still on hold,
-                see TasksRoutes.tsx and task-module-build-plan.md Part 12. */}
-            <Route
-              element={<RequirePermission permission="view_tasks_section" />}
-            >
-              <Route path="/tasks/*" element={<TasksRoutes />} />
+              <Route path="/profile" element={<ProfilePage />} />
+              <Route path="/profile/notifications" element={<NotificationSettingsPage />} />
+              <Route path="/notifications" element={<NotificationsPage />} />
+
+              {/* Settings */}
+              <Route
+                element={<RequirePermission permission="view_settings_section" />}
+              >
+                <Route path="/settings/*" element={<SettingsRoutes />} />
+              </Route>
+
+              {/* operations */}
+              <Route
+                element={
+                  <RequirePermission permission="view_operations_section" />
+                }
+              >
+                <Route path="/operations/*" element={<OperationsRoutes />} />
+              </Route>
+
+              <Route
+                element={<RequirePermission permission="view_shops_section" />}
+              >
+                <Route path="/shops/*" element={<ShopsRoutes />} />
+              </Route>
+
+              <Route
+                element={<RequirePermission permission="view_company_section" />}
+              >
+                <Route path="/company/*" element={<CompanyRoutes />} />
+              </Route>
+              <Route
+                element={
+                  <RequirePermission permission="view_execution_section" />
+                }
+              >
+                <Route
+                  path="/execution-management/*"
+                  element={<ExecutionManagementRoutes />}
+                />
+              </Route>
+
+              {/* Tasks — section-level gate only (view_tasks_section,
+                  granted to Admin only while the module is in testing).
+                  Per-screen/action permissions inside it are still on hold,
+                  see TasksRoutes.tsx and task-module-build-plan.md Part 12. */}
+              <Route
+                element={<RequirePermission permission="view_tasks_section" />}
+              >
+                <Route path="/tasks/*" element={<TasksRoutes />} />
+              </Route>
             </Route>
           </Route>
-        </Route>
-      )}
+        )}
 
-      {/* If not logged in, fallback to login */}
-      {!session && <Route path="*" element={<LoginForm />} />}
-    </Routes>
+        {/* If not logged in, fallback to login */}
+        {!session && <Route path="*" element={<LoginForm />} />}
+      </Routes>
+    </>
   );
 };
 

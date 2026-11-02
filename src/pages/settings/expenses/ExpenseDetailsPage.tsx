@@ -1,7 +1,9 @@
 import { useParams } from "react-router-dom";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { PostgrestError } from "@supabase/supabase-js";
 import { supabase } from "../../../lib/supabaseClient";
+import { TIERS } from "../../../lib/queryClient";
 import { formatCurrency } from "../../../utils/helpper";
 import GenericTable from "../../../components/tables/table";
 import { expenseByProjectColumns } from "../../../components/tables/columns/expenseByProjectColumns";
@@ -51,76 +53,67 @@ interface ExpenseStats {
 // هوك: جلب الإحصائيات الخام
 // ─────────────────────────────────────────────
 
-export function useExpenseStats(expenseId: string) {
-  const [stats, setStats] = useState<ExpenseStats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<PostgrestError | null>(null);
+async function fetchExpenseStats(expenseId: string): Promise<ExpenseStats> {
+  const { data: expenseData, error: expenseError } = await supabase
+    .from("expenses")
+    .select("id, name, created_at, usage_count")
+    .eq("id", expenseId)
+    .single();
+  if (expenseError) throw expenseError;
 
-  useEffect(() => {
-    if (!expenseId) return;
+  const { data: peRows, error: peError } = await supabase
+    .from("project_expenses")
+    .select(
+      `id,
+       total_amount,
+       expense_date,
+       project_id,
+       projects ( id, name )`,
+    )
+    .eq("expense_id", expenseId)
+    .is("deleted_at", null);
+  if (peError) throw peError;
 
-    async function fetchStats() {
-      setLoading(true);
+  const rows = (peRows ?? []) as RawExpenseRow[];
 
-      const { data: expenseData, error: expenseError } = await supabase
-        .from("expenses")
-        .select("id, name, created_at, usage_count")
-        .eq("id", expenseId)
-        .single();
-
-      if (expenseError || !expenseData) {
-        setError(expenseError);
-        setLoading(false);
-        return;
-      }
-
-      const { data: peRows, error: peError } = await supabase
-        .from("project_expenses")
-        .select(
-          `id,
-           total_amount,
-           expense_date,
-           project_id,
-           projects ( id, name )`,
-        )
-        .eq("expense_id", expenseId)
-        .is("deleted_at", null);
-
-      if (peError) {
-        setError(peError);
-        setLoading(false);
-        return;
-      }
-
-      const rows = (peRows ?? []) as RawExpenseRow[];
-
-      // بناء بيانات الرسم البياني من كل السجلات (بدون فلترة)
-      const monthMap = new Map<string, ExpenseOverTime>();
-      for (const row of rows) {
-        if (!row.expense_date) continue;
-        const month = row.expense_date.slice(0, 7);
-        const amount = Number(row.total_amount ?? 0);
-        const existing = monthMap.get(month);
-        if (existing) {
-          existing.usage_count += 1;
-          existing.total_amount += amount;
-        } else {
-          monthMap.set(month, { month, usage_count: 1, total_amount: amount });
-        }
-      }
-
-      const overTime = Array.from(monthMap.values()).sort((a, b) =>
-        a.month.localeCompare(b.month),
-      );
-
-      setStats({ expense: expenseData, rows, over_time: overTime });
-      setLoading(false);
+  // بناء بيانات الرسم البياني من كل السجلات (بدون فلترة)
+  const monthMap = new Map<string, ExpenseOverTime>();
+  for (const row of rows) {
+    if (!row.expense_date) continue;
+    const month = row.expense_date.slice(0, 7);
+    const amount = Number(row.total_amount ?? 0);
+    const existing = monthMap.get(month);
+    if (existing) {
+      existing.usage_count += 1;
+      existing.total_amount += amount;
+    } else {
+      monthMap.set(month, { month, usage_count: 1, total_amount: amount });
     }
+  }
 
-    fetchStats();
-  }, [expenseId]);
+  const overTime = Array.from(monthMap.values()).sort((a, b) =>
+    a.month.localeCompare(b.month),
+  );
 
-  return { stats, loading, error };
+  return { expense: expenseData, rows, over_time: overTime };
+}
+
+// Money totals: always revalidated on view, shown from cache meanwhile.
+export const expenseStatsQueryOptions = (expenseId: string) =>
+  queryOptions({
+    queryKey: ["settings", "expense-stats", expenseId],
+    queryFn: () => fetchExpenseStats(expenseId),
+    enabled: !!expenseId,
+    ...TIERS.C,
+  });
+
+export function useExpenseStats(expenseId: string) {
+  const query = useQuery(expenseStatsQueryOptions(expenseId));
+  return {
+    stats: query.data ?? null,
+    loading: query.isPending,
+    error: query.error as PostgrestError | null,
+  };
 }
 
 // ─────────────────────────────────────────────

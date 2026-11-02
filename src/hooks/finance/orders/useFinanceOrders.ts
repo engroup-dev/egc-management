@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PostgrestError } from "@supabase/supabase-js";
 import { supabase } from "../../../lib/supabaseClient";
+import { TIERS } from "../../../lib/queryClient";
 import { OrdersWithVendors } from "../../../types/extended.type";
 
 export interface FinanceOrderRow extends OrdersWithVendors {
@@ -10,39 +12,36 @@ export interface FinanceOrderRow extends OrdersWithVendors {
   finance_entered_by: string | null;
 }
 
+export const financeOrdersKey = ["finance", "orders"] as const;
+
+async function fetchFinanceOrders(): Promise<FinanceOrderRow[]> {
+  const { data, error } = await supabase
+    .from("shop_orders")
+    .select("*, vendors(id, vendor_name), projects(id, name)")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching finance orders:", error);
+    throw error;
+  }
+  return (data as FinanceOrderRow[]) || [];
+}
+
+// Exported so the background prefetcher can warm this screen.
+export const financeOrdersQueryOptions = () =>
+  queryOptions({
+    queryKey: financeOrdersKey,
+    queryFn: fetchFinanceOrders,
+    ...TIERS.C,
+  });
+
 export function useFinanceOrders() {
-  const [orders, setOrders] = useState<FinanceOrderRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
+  const queryClient = useQueryClient();
+  const query = useQuery(financeOrdersQueryOptions());
 
-  const fetchOrders = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const { data, error: ordersError } = await supabase
-        .from("shop_orders")
-        .select("*, vendors(id, vendor_name), projects(id, name)")
-        .order("created_at", { ascending: false });
-
-      if (ordersError) {
-        console.error("Error fetching finance orders:", ordersError);
-        setError(ordersError);
-        return;
-      }
-
-      setOrders((data as FinanceOrderRow[]) || []);
-    } catch (err) {
-      console.error("Unexpected error fetching finance orders:", err);
-      setError(err as PostgrestError);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchOrders();
-  }, [fetchOrders]);
+  const refetch = useCallback(async () => {
+    await query.refetch();
+  }, [query.refetch]);
 
   const markOrdersEntered = useCallback(
     async (orderIds: string[], userId?: string | null) => {
@@ -62,11 +61,18 @@ export function useFinanceOrders() {
         return { error: updateError };
       }
 
-      await fetchOrders();
+      // Also refreshes the pending-orders badge count.
+      await queryClient.invalidateQueries({ queryKey: ["finance"] });
       return { error: null };
     },
-    [fetchOrders],
+    [queryClient],
   );
 
-  return { orders, loading, error, refetch: fetchOrders, markOrdersEntered };
+  return {
+    orders: query.data ?? [],
+    loading: query.isPending,
+    error: query.error as PostgrestError | null,
+    refetch,
+    markOrdersEntered,
+  };
 }

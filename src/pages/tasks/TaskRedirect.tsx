@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Navigate, useParams } from "react-router-dom";
 import { supabase } from "../../lib/supabaseClient";
 import { TaskListPageSkeleton } from "../../components/tasks/TasksSkeletons";
@@ -11,18 +11,9 @@ import { TaskListPageSkeleton } from "../../components/tasks/TasksSkeletons";
 // from, not just the board screen itself.
 export default function TaskRedirect() {
   const { taskId } = useParams<{ taskId: string }>();
-  const [boardId, setBoardId] = useState<string | null | undefined>(undefined);
-
-  useEffect(() => {
-    if (!taskId) return;
-    supabase
-      .schema("tasks")
-      .from("tasks")
-      .select("board_id")
-      .eq("id", taskId)
-      .maybeSingle()
-      .then(({ data }) => setBoardId(data?.board_id ?? null));
-  }, [taskId]);
+  const boardQuery = useBoardOfTask(taskId);
+  // A failed lookup falls back to /tasks, same as a task that doesn't exist.
+  const boardId = boardQuery.isError ? null : boardQuery.data;
 
   if (boardId === undefined) {
     return <TaskListPageSkeleton />;
@@ -33,4 +24,23 @@ export default function TaskRedirect() {
   }
 
   return <Navigate to={`/tasks/board/${boardId}/task/${taskId}`} replace />;
+}
+
+// Cached (and persisted) so revisiting a deep link redirects instantly
+// instead of flashing the skeleton.
+function useBoardOfTask(taskId: string | undefined) {
+  return useQuery({
+    queryKey: ["tasks", "board-of-task", taskId],
+    queryFn: async (): Promise<string | null> => {
+      const { data, error } = await supabase
+        .schema("tasks")
+        .from("tasks")
+        .select("board_id")
+        .eq("id", taskId as string)
+        .maybeSingle();
+      if (error) throw error;
+      return data?.board_id ?? null;
+    },
+    enabled: !!taskId,
+  });
 }

@@ -1,60 +1,43 @@
-import { useEffect, useState } from "react";
+import { Dispatch, SetStateAction, useCallback } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { expenses as Expense } from "../../types/global.type";
 import { PostgrestError } from "@supabase/supabase-js";
 import { supabase } from "../../lib/supabaseClient";
 
-export function useExpenses() {
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<PostgrestError | null>(null);
+export const settingsExpensesKey = ["settings", "expenses"] as const;
 
-  useEffect(() => {
-    async function fetchExpenses() {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("expenses")
-        .select("*")
-        .order("name", { ascending: false });
-
-      if (error) {
-        console.error("error fetching expenses", error);
-        setError(error);
-      } else {
-        setExpenses(data ?? []);
-      }
-      setLoading(false);
-    }
-    fetchExpenses();
-  }, []);
-
-  // 👇 expose setter
-  return { expenses, setExpenses, loading, error };
+async function fetchExpenses(): Promise<Expense[]> {
+  const { data, error } = await supabase
+    .from("expenses")
+    .select("*")
+    .order("name", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
 }
 
-export function useExpense(expenseId: string) {
-  const [expenses, setExpenses] = useState<Expense | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<PostgrestError | null>(null);
+// Exported so the background prefetcher can warm this screen.
+export const settingsExpensesQueryOptions = () =>
+  queryOptions({ queryKey: settingsExpensesKey, queryFn: fetchExpenses });
 
-  useEffect(() => {
-    async function fetchExpense() {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("expenses")
-        .select("*")
-        .eq("id", expenseId)
-        .single();
+export function useExpenses() {
+  const queryClient = useQueryClient();
+  const query = useQuery(settingsExpensesQueryOptions());
 
-      if (error) {
-        console.error("error fetching expense", error);
-        setError(error);
-      } else {
-        setExpenses(data ?? null);
-      }
-      setLoading(false);
-    }
-    fetchExpense();
-  }, [expenseId]);
+  // Callers patch the list after adding an expense; patch the cache so
+  // every screen using this list sees it.
+  const setExpenses: Dispatch<SetStateAction<Expense[]>> = useCallback(
+    (action) => {
+      queryClient.setQueryData<Expense[]>(settingsExpensesKey, (prev) =>
+        typeof action === "function" ? action(prev ?? []) : action,
+      );
+    },
+    [queryClient],
+  );
 
-  return { expenses, setExpenses, loading, error };
+  return {
+    expenses: query.data ?? [],
+    setExpenses,
+    loading: query.isPending,
+    error: query.error as PostgrestError | null,
+  };
 }

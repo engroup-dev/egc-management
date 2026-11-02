@@ -1,33 +1,63 @@
-import { useEffect, useState } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PostgrestError } from "@supabase/supabase-js";
 import { supabase } from "../../lib/supabaseClient";
 import { RoleFormValues } from "../../types/schema/Role.schema";
 import { Roles, Users } from "../../types/global.type";
+import { TIERS } from "../../lib/queryClient";
+
+export const settingsRolesKey = ["settings", "roles"] as const;
+export const settingsRoleKey = (id: string) =>
+  ["settings", "role", id] as const;
+
+async function fetchRoles(): Promise<Roles[]> {
+  const { data, error } = await supabase.from("roles").select("*");
+  if (error) throw error;
+  return data ?? [];
+}
+
+// Exported so the background prefetcher can warm this screen. Also read
+// by useUtils and EmployeeRole so every roles dropdown shares one cache.
+export const settingsRolesQueryOptions = () =>
+  queryOptions({
+    queryKey: settingsRolesKey,
+    queryFn: fetchRoles,
+    ...TIERS.A,
+  });
+
+interface RoleDetail {
+  role: Roles;
+  users: Users[];
+}
+
+async function fetchRole(id: string): Promise<RoleDetail> {
+  const { data, error } = await supabase
+    .from("roles")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (error) throw error;
+
+  const { data: usersData, error: usersError } = await supabase
+    .from("users")
+    .select("*")
+    .eq("role_id", id);
+  // The users list was always best-effort: the role still shows without it.
+  if (usersError) {
+    console.error("error fetching users for role", usersError);
+  }
+  return { role: data, users: usersData ?? [] };
+}
+
+export const settingsRoleQueryOptions = (id: string) =>
+  queryOptions({
+    queryKey: settingsRoleKey(id),
+    queryFn: () => fetchRole(id),
+    enabled: !!id,
+  });
 
 export function useRoles() {
-  const [roles, setRoles] = useState<Roles[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
-
-  useEffect(() => {
-    async function fetchRoles() {
-      setLoading(true);
-      try {
-        const { data, error } = await supabase.from("roles").select("*");
-        if (error) {
-          console.error("error fetching roles", error);
-          setError(error);
-        } else {
-          setRoles(data ?? []);
-        }
-      } catch (err) {
-        console.error("unexpected error fetching roles", err);
-        setError(err as PostgrestError);
-      }
-      setLoading(false);
-    }
-    fetchRoles();
-  }, []);
+  const queryClient = useQueryClient();
+  const query = useQuery(settingsRolesQueryOptions());
 
   const addRoles = async (form: RoleFormValues) => {
     const { error } = await supabase
@@ -37,51 +67,22 @@ export function useRoles() {
       console.error("error adding role", error);
       return { success: false, error: "خطأ في اضافة الدور" };
     }
+    queryClient.invalidateQueries({ queryKey: settingsRolesKey });
     return { success: true };
   };
-  return { roles, loading, error, addRoles };
+  return {
+    roles: query.data ?? [],
+    loading: query.isPending,
+    error: query.error as PostgrestError | null,
+    addRoles,
+  };
 }
 
 export function useRole(id: string) {
   // A role's permissions are in role_permission_grants, edited at
   // /settings/permissions/roles/:id (the old role_permissions table is gone).
-  const [role, setRole] = useState<Roles | null>(null);
-  const [users, setUsers] = useState<Users[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
-
-  useEffect(() => {
-    async function fetchRole() {
-      setLoading(true);
-      try {
-        const { data, error } = await supabase
-          .from("roles")
-          .select("*")
-          .eq("id", id)
-          .single();
-        if (error) {
-          console.error("error fetching role", error);
-          setError(error);
-        } else {
-          setRole(data);
-        }
-
-        const { data: usersData, error: usersError } = await supabase
-          .from("users")
-          .select("*")
-          .eq("role_id", id);
-        if (usersError) {
-          console.error("error fetching users for role", usersError);
-        }
-        setUsers(usersData ?? []);
-      } catch (err) {
-        console.error("unexpected error fetching role", err);
-        setError(err as PostgrestError);
-      }
-      setLoading(false);
-    }
-    fetchRole();
-  }, [id]);
+  const queryClient = useQueryClient();
+  const query = useQuery(settingsRoleQueryOptions(id));
 
   const updateRole = async (form: RoleFormValues) => {
     const { error } = await supabase
@@ -92,11 +93,24 @@ export function useRole(id: string) {
       console.error("error updating role", error);
       return { success: false, error: "خطأ في تحديث الدور" };
     }
-    setRole((prev) =>
-      prev ? { ...prev, name: form.name, code: form.code } : prev,
+    queryClient.setQueryData<RoleDetail>(settingsRoleKey(id), (prev) =>
+      prev
+        ? { ...prev, role: { ...prev.role, name: form.name, code: form.code } }
+        : prev,
+    );
+    queryClient.setQueryData<Roles[]>(settingsRolesKey, (prev) =>
+      prev?.map((r) =>
+        r.id === id ? { ...r, name: form.name, code: form.code } : r,
+      ),
     );
     return { success: true };
   };
 
-  return { role, users, loading, error, updateRole };
+  return {
+    role: query.data?.role ?? null,
+    users: query.data?.users ?? [],
+    loading: query.isPending,
+    error: query.error as PostgrestError | null,
+    updateRole,
+  };
 }

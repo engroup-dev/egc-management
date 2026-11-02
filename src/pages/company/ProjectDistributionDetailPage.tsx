@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import {
   DistributionPeriod,
@@ -6,6 +6,7 @@ import {
 } from "../../hooks/projects/useDistributionHistory";
 import { formatCurrency } from "../../utils/helpper";
 import { supabase } from "../../lib/supabaseClient";
+import { useProject } from "../../hooks/useProjects";
 import LoadingPage from "../../components/ui/LoadingPage";
 import ErrorPage from "../../components/ui/errorPage";
 import ReverseDistributionDialog from "../../components/company/ReverseDistributionDialog";
@@ -440,28 +441,18 @@ const ProjectDistributionDetailPage = () => {
     refetch,
   } = useDistributionHistory();
 
-  const [projectName, setProjectName] = useState<string>("");
+  // Same cache entry as useProject() elsewhere, so the title is instant
+  // when the project was opened before.
+  const { project } = useProject(projectId ?? "");
+  const projectName = project
+    ? project.serial_number
+      ? `#${project.serial_number} ${project.name}`
+      : project.name
+    : "";
   const [reversalTarget, setReversalTarget] =
     useState<DistributionPeriod | null>(null);
   const [showReverseAll, setShowReverseAll] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (!projectId) return;
-    supabase
-      .from("projects")
-      .select("name, serial_number")
-      .eq("id", projectId)
-      .single()
-      .then(({ data }) => {
-        if (data)
-          setProjectName(
-            data.serial_number
-              ? `#${data.serial_number} ${data.name}`
-              : data.name,
-          );
-      });
-  }, [projectId]);
 
   const handleReverse = async (note: string) => {
     if (!reversalTarget) return;

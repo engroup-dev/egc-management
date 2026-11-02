@@ -1,14 +1,15 @@
 import { useParams } from "react-router-dom";
 import BookProjectIncomeTab from "../../../components/finance/bookkeeper/tabs/BookProjectIncomeTab";
 import { useBookProject } from "../../../hooks/projects/useBookProjects";
+import RefreshingBadge from "../../../components/ui/RefreshingBadge";
 
 const TreasuryProjectPage = () => {
   const { id } = useParams<{ id: string }>();
+  // Hook before any early return (rules of hooks); disabled without an id.
+  const { project, loading, refreshing, error } = useBookProject(id ?? "");
   if (!id) {
     return <div>لا يوجد معرف للمشروع</div>;
   }
-
-  const { project, loading, error } = useBookProject(id);
 
   if (loading) {
     return (
@@ -34,6 +35,7 @@ const TreasuryProjectPage = () => {
   }
   return (
     <div className="p-4">
+      <RefreshingBadge show={refreshing} />
       <BookProjectIncomeTab project={project} />
     </div>
   );

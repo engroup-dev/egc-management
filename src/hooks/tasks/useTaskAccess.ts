@@ -97,7 +97,8 @@ export function useMyTaskAccess(): {
   return {
     access: userId ? query.data : undefined,
     loading: !resolved || (!!userId && query.isPending),
-    error: query.isError,
+    // Keep serving a cached answer if a background refetch fails.
+    error: query.isError && query.data === undefined,
     userId,
   };
 }

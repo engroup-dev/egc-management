@@ -1,35 +1,35 @@
-import { useEffect, useState } from "react";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { supabase } from "../../../lib/supabaseClient";
+import { TIERS } from "../../../lib/queryClient";
+
+export const pendingContractorPaymentsCountKey = [
+  "finance",
+  "pending-contractor-payments-count",
+] as const;
+
+async function fetchPendingContractorPaymentsCount(): Promise<number> {
+  const { count, error } = await supabase
+    .schema("contracts")
+    .from("payments")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "pending");
+  if (error) {
+    console.error(error);
+    throw error;
+  }
+  return count ?? 0;
+}
+
+// Exported so the background prefetcher can warm the finance menu badges.
+export const pendingContractorPaymentsCountQueryOptions = () =>
+  queryOptions({
+    queryKey: pendingContractorPaymentsCountKey,
+    queryFn: fetchPendingContractorPaymentsCount,
+    ...TIERS.C,
+  });
 
 /** Lightweight count (no row data) of contractor payments awaiting review. */
 export function usePendingContractorPaymentsCount() {
-  const [count, setCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function fetchCount() {
-      setLoading(true);
-      const { count: pendingCount, error } = await supabase
-        .schema("contracts")
-        .from("payments")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "pending");
-
-      if (cancelled) return;
-
-      if (error) console.error(error);
-
-      setCount(pendingCount ?? 0);
-      setLoading(false);
-    }
-
-    fetchCount();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return { count, loading };
+  const query = useQuery(pendingContractorPaymentsCountQueryOptions());
+  return { count: query.data ?? 0, loading: query.isPending };
 }

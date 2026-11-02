@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Plus, X } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
 import AnchoredMenu from "../board/AnchoredMenu";
@@ -130,21 +131,7 @@ export default function DependenciesSection({
   // Fetched once per space (not per keystroke) so every search can scope
   // a dedicated same-space query alongside the company-wide one — see
   // runSearch below for why that's necessary.
-  const [spaceBoardIds, setSpaceBoardIds] = useState<string[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    supabase
-      .schema("tasks")
-      .from("boards")
-      .select("id")
-      .eq("space_id", spaceId)
-      .then(({ data }) => {
-        if (!cancelled) setSpaceBoardIds((data ?? []).map((b) => b.id));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [spaceId]);
+  const { data: spaceBoardIds = [] } = useSpaceBoardIds(spaceId);
 
   const runSearch = (term: string) => {
     setSearch(term);
@@ -324,4 +311,20 @@ export default function DependenciesSection({
       </div>
     </div>
   );
+}
+
+function useSpaceBoardIds(spaceId: string) {
+  return useQuery({
+    queryKey: ["tasks", "space-board-ids", spaceId],
+    queryFn: async (): Promise<string[]> => {
+      const { data, error } = await supabase
+        .schema("tasks")
+        .from("boards")
+        .select("id")
+        .eq("space_id", spaceId);
+      if (error) throw error;
+      return (data ?? []).map((b) => b.id);
+    },
+    enabled: !!spaceId,
+  });
 }

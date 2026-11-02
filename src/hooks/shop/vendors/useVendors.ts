@@ -1,5 +1,6 @@
 // hooks/shop/vendors/useVendors.ts
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PostgrestError } from "@supabase/supabase-js";
 import { supabase } from "../../../lib/supabaseClient";
 import { VendorsWithSpecializations } from "../../../types/extended.type";
@@ -14,10 +15,31 @@ const VENDORS_SELECT = `
 
 type ActionError = { message: string };
 
+// Not ["vendors"]: that key belongs to src/hooks/useVendors.tsx, which
+// selects different columns.
+export const shopVendorsKey = ["shop", "vendors"] as const;
+
+async function fetchShopVendors(): Promise<VendorsWithSpecializations[]> {
+  const { data, error } = await supabase
+    .from("vendors")
+    .select(VENDORS_SELECT)
+    .order("vendor_name", { ascending: true });
+
+  if (error) {
+    console.error("Error fetching vendors:", error);
+    throw error;
+  }
+  return (data as unknown as VendorsWithSpecializations[]) ?? [];
+}
+
+// Exported so the background prefetcher can warm this screen.
+export const shopVendorsQueryOptions = () =>
+  queryOptions({ queryKey: shopVendorsKey, queryFn: fetchShopVendors });
+
 export function useVendors() {
-  const [vendors, setVendors] = useState<VendorsWithSpecializations[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
+  const queryClient = useQueryClient();
+  const query = useQuery(shopVendorsQueryOptions());
+  const vendors = query.data ?? [];
 
   // Separate from `error` on purpose: `error` = page can't load data (blocking).
   // `actionError` = a single mutation (toggle/edit) failed (non-blocking, transient).
@@ -25,41 +47,32 @@ export function useVendors() {
 
   const clearActionError = useCallback(() => setActionError(null), []);
 
-  const fetchVendors = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const setVendors = useCallback(
+    (
+      updater: (
+        prev: VendorsWithSpecializations[],
+      ) => VendorsWithSpecializations[],
+    ) =>
+      queryClient.setQueryData<VendorsWithSpecializations[]>(
+        shopVendorsKey,
+        (prev) => (prev ? updater(prev) : prev),
+      ),
+    [queryClient],
+  );
 
-    try {
-      const { data, error: fetchError } = await supabase
-        .from("vendors")
-        .select(VENDORS_SELECT)
-        .order("vendor_name", { ascending: true });
-
-      if (fetchError) {
-        console.error("Error fetching vendors:", fetchError);
-        setError(fetchError);
-        return;
-      }
-
-      setVendors((data as unknown as VendorsWithSpecializations[]) || []);
-    } catch (err) {
-      console.error("Unexpected error fetching vendors:", err);
-      setError(err as PostgrestError);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchVendors();
-  }, [fetchVendors]);
+  const { refetch: refetchQuery } = query;
+  const refetch = useCallback(async () => {
+    await refetchQuery();
+  }, [refetchQuery]);
 
   const toggleVendorShop = useCallback(
     async (id: string, isShop: boolean) => {
       setActionError(null);
 
       if (isShop) {
-        const vendor = vendors.find((v) => v.id === id);
+        const vendor = queryClient
+          .getQueryData<VendorsWithSpecializations[]>(shopVendorsKey)
+          ?.find((v) => v.id === id);
         if (!vendor?.flow) {
           setActionError({
             message: "يجب اختيار مسار العمل أولاً قبل تفعيل المتجر",
@@ -94,6 +107,10 @@ export function useVendors() {
             v.id === id ? (data as unknown as VendorsWithSpecializations) : v,
           ),
         );
+        // The supply-chain vendor detail shows the same row.
+        queryClient.invalidateQueries({
+          queryKey: ["supply-chain", "vendor", id],
+        });
         return { success: true as const, data };
       } catch (err) {
         console.error("Unexpected error toggling vendor shop status:", err);
@@ -104,7 +121,7 @@ export function useVendors() {
         return { success: false as const };
       }
     },
-    [vendors],
+    [queryClient, setVendors],
   );
 
   const updateVendorLimitFlow = useCallback(
@@ -114,7 +131,9 @@ export function useVendors() {
     ) => {
       setActionError(null);
 
-      const prevVendor = vendors.find((v) => v.id === id);
+      const prevVendor = queryClient
+        .getQueryData<VendorsWithSpecializations[]>(shopVendorsKey)
+        ?.find((v) => v.id === id);
 
       setVendors((prev) =>
         prev.map((v) =>
@@ -152,6 +171,9 @@ export function useVendors() {
             v.id === id ? (data as unknown as VendorsWithSpecializations) : v,
           ),
         );
+        queryClient.invalidateQueries({
+          queryKey: ["supply-chain", "vendor", id],
+        });
         return { success: true as const, data };
       } catch (err) {
         console.error("Unexpected error updating vendor limit/flow:", err);
@@ -162,16 +184,16 @@ export function useVendors() {
         return { success: false as const, error: err as PostgrestError };
       }
     },
-    [vendors],
+    [queryClient, setVendors],
   );
 
   return {
     vendors,
-    loading,
-    error,
+    loading: query.isPending,
+    error: query.error as PostgrestError | null,
     actionError,
     clearActionError,
-    refetch: fetchVendors,
+    refetch,
     toggleVendorShop,
     updateVendorLimitFlow,
   };

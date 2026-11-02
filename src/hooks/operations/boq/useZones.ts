@@ -1,5 +1,6 @@
 import { PostgrestError } from "@supabase/supabase-js";
-import { useCallback, useEffect, useState } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Dispatch, SetStateAction, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import { computeNextSortOrder } from "./sortOrder";
 
@@ -11,43 +12,59 @@ export interface Zone {
   created_at: string;
 }
 
+export const boqZonesKey = (projectId: string) =>
+  ["boq", "zones", projectId] as const;
+
+async function fetchZones(projectId: string): Promise<Zone[]> {
+  const { data, error } = await supabase
+    .schema("boq")
+    .from("zones")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("sort_order", { ascending: true });
+
+  if (error) {
+    console.error("error fetching zones", error);
+    throw error;
+  }
+  return data ?? [];
+}
+
+export const boqZonesQueryOptions = (projectId: string) =>
+  queryOptions({
+    queryKey: boqZonesKey(projectId),
+    queryFn: () => fetchZones(projectId),
+    enabled: !!projectId,
+  });
+
 export function useZones(projectId: string) {
-  const [zones, setZones] = useState<Zone[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
+  const queryClient = useQueryClient();
+  const query = useQuery(boqZonesQueryOptions(projectId));
 
-  const fetchZones = useCallback(async () => {
+  // Callers apply optimistic reorders through this, so it writes the cache.
+  const setZones: Dispatch<SetStateAction<Zone[]>> = (action) => {
+    queryClient.setQueryData<Zone[]>(boqZonesKey(projectId), (prev) =>
+      typeof action === "function" ? action(prev ?? []) : action,
+    );
+  };
+
+  const refetch = async () => {
     if (!projectId) return;
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .schema("boq")
-        .from("zones")
-        .select("*")
-        .eq("project_id", projectId)
-        .order("sort_order", { ascending: true });
+    await query.refetch();
+  };
 
-      if (error) {
-        console.error("error fetching zones", error);
-        setError(error);
-      } else {
-        setZones(data ?? []);
-      }
-    } catch (err) {
-      console.error("unexpected error fetching zones", err);
-      setError(err as PostgrestError);
-    }
-    setLoading(false);
-  }, [projectId]);
-
-  useEffect(() => {
-    fetchZones();
-  }, [fetchZones]);
-
-  return { zones, setZones, loading, error, refetch: fetchZones };
+  return {
+    zones: query.data ?? [],
+    setZones,
+    // isLoading: a disabled query (no projectId) must not read as loading.
+    loading: query.isLoading,
+    error: query.error as PostgrestError | null,
+    refetch,
+  };
 }
 
 export function useCreateZone() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
 
@@ -76,6 +93,7 @@ export function useCreateZone() {
       setError(error);
       return { data: null, error };
     }
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     return { data, error: null };
   }
 
@@ -83,6 +101,7 @@ export function useCreateZone() {
 }
 
 export function useUpdateZone() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
 
@@ -102,6 +121,7 @@ export function useUpdateZone() {
       setError(error);
       return { error };
     }
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     return { error: null };
   }
 
@@ -111,6 +131,7 @@ export function useUpdateZone() {
 const FOREIGN_KEY_VIOLATION = "23503";
 
 export function useDeleteZone() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
 
@@ -136,6 +157,7 @@ export function useDeleteZone() {
       }
       return { error, blocked: false as const };
     }
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     return { error: null, blocked: false as const };
   }
 

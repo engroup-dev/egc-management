@@ -1,45 +1,48 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PostgrestError } from "@supabase/supabase-js";
 import { Subcategories } from "../../../types/global.type";
 import { supabase } from "../../../lib/supabaseClient";
 import { ShopSubcategoryFormValues } from "../../../types/schema/shop/subcategory.schema";
 
+export const shopSubcategoriesKey = ["shop", "subcategories"] as const;
+
+async function fetchShopSubcategories(): Promise<Subcategories[]> {
+  const { data, error } = await supabase.from("shop_subcategories").select("*");
+  if (error) {
+    console.error("Error fetching shop subcategories:", error);
+    throw error;
+  }
+  return data ?? [];
+}
+
+// Exported so the background prefetcher can warm this screen.
+export const shopSubcategoriesQueryOptions = () =>
+  queryOptions({
+    queryKey: shopSubcategoriesKey,
+    queryFn: fetchShopSubcategories,
+  });
+
 export function useSubcategories() {
-  const [subcategories, setSubcategories] = useState<Subcategories[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
+  const queryClient = useQueryClient();
+  const query = useQuery(shopSubcategoriesQueryOptions());
+  // Forms read `loading` / `error` for their own submit.
+  const [mutating, setMutating] = useState(false);
+  const [mutationError, setMutationError] = useState<PostgrestError | null>(
+    null,
+  );
 
-  useEffect(() => {
-    async function fetchSubcategories() {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const { data, error: fetchError } = await supabase
-          .from("shop_subcategories")
-          .select("*");
-
-        if (fetchError) {
-          console.error("Error fetching shop subcategories:", fetchError);
-          setError(fetchError);
-          return;
-        }
-
-        setSubcategories(data || []);
-      } catch (err) {
-        console.error("Unexpected error fetching shop subcategories:", err);
-        setError(err as PostgrestError);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchSubcategories();
-  }, []);
+  const setActive = useCallback(
+    (id: string, isActive: boolean) =>
+      queryClient.setQueryData<Subcategories[]>(shopSubcategoriesKey, (prev) =>
+        prev?.map((s) => (s.id === id ? { ...s, is_active: isActive } : s)),
+      ),
+    [queryClient],
+  );
 
   const addSubcategory = async (subcategory: ShopSubcategoryFormValues) => {
-    setLoading(true);
-    setError(null);
+    setMutating(true);
+    setMutationError(null);
 
     try {
       const { data, error: insertError } = await supabase
@@ -50,28 +53,28 @@ export function useSubcategories() {
 
       if (insertError) {
         console.error("Error adding shop subcategory:", insertError);
-        setError(insertError);
+        setMutationError(insertError);
         return null;
       }
 
-      setSubcategories((prev) => [...prev, data]);
+      queryClient.setQueryData<Subcategories[]>(shopSubcategoriesKey, (prev) =>
+        prev ? [...prev, data] : prev,
+      );
+      queryClient.invalidateQueries({ queryKey: ["shop"] });
       return data;
     } catch (err) {
       console.error("Unexpected error adding shop subcategory:", err);
-      setError(err as PostgrestError);
+      setMutationError(err as PostgrestError);
       return null;
     } finally {
-      setLoading(false);
+      setMutating(false);
     }
   };
 
   const toggleSubcategoryActive = useCallback(
     async (id: string, isActive: boolean) => {
-      setError(null);
-
-      setSubcategories((prev) =>
-        prev.map((s) => (s.id === id ? { ...s, is_active: isActive } : s)),
-      );
+      setMutationError(null);
+      setActive(id, isActive);
 
       try {
         const { data, error: updateError } = await supabase
@@ -83,30 +86,28 @@ export function useSubcategories() {
 
         if (updateError) {
           console.error("Error toggling subcategory status:", updateError);
-          setError(updateError);
-          setSubcategories((prev) =>
-            prev.map((s) => (s.id === id ? { ...s, is_active: !isActive } : s)),
-          );
+          setMutationError(updateError);
+          setActive(id, !isActive);
           return null;
         }
 
+        // Category detail lists subcategories under its own key.
+        queryClient.invalidateQueries({ queryKey: ["shop"] });
         return data;
       } catch (err) {
         console.error("Unexpected error toggling subcategory status:", err);
-        setError(err as PostgrestError);
-        setSubcategories((prev) =>
-          prev.map((s) => (s.id === id ? { ...s, is_active: !isActive } : s)),
-        );
+        setMutationError(err as PostgrestError);
+        setActive(id, !isActive);
         return null;
       }
     },
-    [],
+    [queryClient, setActive],
   );
 
   return {
-    subcategories,
-    loading,
-    error,
+    subcategories: query.data ?? [],
+    loading: query.isPending || mutating,
+    error: mutationError ?? (query.error as PostgrestError | null),
     addSubcategory,
     toggleSubcategoryActive,
   };

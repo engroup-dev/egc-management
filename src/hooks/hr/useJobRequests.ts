@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import type { PostgrestError } from "@supabase/supabase-js";
 import {
   listJobRequests,
@@ -6,29 +7,36 @@ import {
 } from "../../services/hr/jobRequestsService";
 import type { JobRequest } from "../../types/hr.type";
 
+/** Prefix for both the full and the open-only list. */
+export const hrJobRequestsKey = ["hr", "job-requests"] as const;
+
+async function fetchJobRequests(openOnly: boolean): Promise<JobRequest[]> {
+  const { data, error } = openOnly
+    ? await listOpenJobRequests()
+    : await listJobRequests();
+  if (error) throw error;
+  return data ?? [];
+}
+
+// Exported so the background prefetcher can warm this screen.
+export const hrJobRequestsQueryOptions = (openOnly = false) =>
+  queryOptions({
+    queryKey: [...hrJobRequestsKey, openOnly ? "open" : "all"],
+    queryFn: () => fetchJobRequests(openOnly),
+  });
+
 export function useJobRequests(openOnly = false) {
-  const [jobRequests, setJobRequests] = useState<JobRequest[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<PostgrestError | null>(null);
+  const query = useQuery(hrJobRequestsQueryOptions(openOnly));
+  const { refetch: refetchQuery } = query;
 
   const refetch = useCallback(async () => {
-    setLoading(true);
-    const { data, error } = openOnly
-      ? await listOpenJobRequests()
-      : await listJobRequests();
-    if (error) {
-      console.error("Error fetching job requests:", error);
-      setError(error);
-    } else {
-      setError(null);
-      setJobRequests(data ?? []);
-    }
-    setLoading(false);
-  }, [openOnly]);
+    await refetchQuery();
+  }, [refetchQuery]);
 
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
-
-  return { jobRequests, loading, error, refetch };
+  return {
+    jobRequests: query.data ?? [],
+    loading: query.isPending,
+    error: query.error as PostgrestError | null,
+    refetch,
+  };
 }

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabaseClient";
 import {
   HeroSlideAltFormValues,
@@ -137,11 +137,11 @@ const reorderHeroSlides = async (slides: HeroSlide[]): Promise<void> => {
   if (error) throw new Error(error.message);
 };
 
-export const useHeroSlidesQuery = () =>
-  useQuery({
-    queryKey: HERO_SLIDES_QUERY_KEY,
-    queryFn: fetchHeroSlides,
-  });
+// Exported for the background prefetcher (src/lib/prefetch).
+export const heroSlidesQueryOptions = () =>
+  queryOptions({ queryKey: HERO_SLIDES_QUERY_KEY, queryFn: fetchHeroSlides });
+
+export const useHeroSlidesQuery = () => useQuery(heroSlidesQueryOptions());
 
 export const useCreateHeroSlide = () => {
   const queryClient = useQueryClient();

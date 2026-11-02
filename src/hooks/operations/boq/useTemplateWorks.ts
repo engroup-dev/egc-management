@@ -1,5 +1,6 @@
 import { PostgrestError } from "@supabase/supabase-js";
-import { useCallback, useEffect, useState } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Dispatch, SetStateAction, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import { TemplateItemRow, TemplateWorkFull } from "./types";
 import { computeNextSortOrder } from "./sortOrder";
@@ -12,59 +13,76 @@ type TemplateWorkRow = {
   template_items: TemplateItemRow[];
 };
 
+export const boqTemplateTypeWorksKey = (templateTypeId: string) =>
+  ["boq", "template-works", templateTypeId] as const;
+
+async function fetchTemplateTypeWorks(
+  templateTypeId: string,
+): Promise<TemplateWorkFull[]> {
+  const { data, error } = await supabase
+    .schema("boq")
+    .from("template_works")
+    .select(
+      `id, template_type_id, name, sort_order,
+      template_items ( id, name, unit, default_quantity, default_unit_price, sort_order )`,
+    )
+    .eq("template_type_id", templateTypeId)
+    .order("sort_order", { ascending: true })
+    .order("sort_order", {
+      ascending: true,
+      referencedTable: "template_items",
+    });
+
+  if (error) {
+    console.error("error fetching template works", error);
+    throw error;
+  }
+  const rows = (data ?? []) as unknown as TemplateWorkRow[];
+  return rows.map((w) => ({
+    id: w.id,
+    template_type_id: w.template_type_id,
+    name: w.name,
+    sort_order: w.sort_order,
+    items: w.template_items,
+  }));
+}
+
+export const boqTemplateTypeWorksQueryOptions = (templateTypeId: string) =>
+  queryOptions({
+    queryKey: boqTemplateTypeWorksKey(templateTypeId),
+    queryFn: () => fetchTemplateTypeWorks(templateTypeId),
+    enabled: !!templateTypeId,
+  });
+
 export function useTemplateTypeWorks(templateTypeId: string) {
-  const [works, setWorks] = useState<TemplateWorkFull[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
+  const queryClient = useQueryClient();
+  const query = useQuery(boqTemplateTypeWorksQueryOptions(templateTypeId));
 
-  const fetchWorks = useCallback(async () => {
+  // Callers apply optimistic reorders through this, so it writes the cache.
+  const setWorks: Dispatch<SetStateAction<TemplateWorkFull[]>> = (action) => {
+    queryClient.setQueryData<TemplateWorkFull[]>(
+      boqTemplateTypeWorksKey(templateTypeId),
+      (prev) => (typeof action === "function" ? action(prev ?? []) : action),
+    );
+  };
+
+  const refetch = async () => {
     if (!templateTypeId) return;
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .schema("boq")
-        .from("template_works")
-        .select(
-          `id, template_type_id, name, sort_order,
-          template_items ( id, name, unit, default_quantity, default_unit_price, sort_order )`,
-        )
-        .eq("template_type_id", templateTypeId)
-        .order("sort_order", { ascending: true })
-        .order("sort_order", {
-          ascending: true,
-          referencedTable: "template_items",
-        });
+    await query.refetch();
+  };
 
-      if (error) {
-        console.error("error fetching template works", error);
-        setError(error);
-      } else {
-        const rows = (data ?? []) as unknown as TemplateWorkRow[];
-        setWorks(
-          rows.map((w) => ({
-            id: w.id,
-            template_type_id: w.template_type_id,
-            name: w.name,
-            sort_order: w.sort_order,
-            items: w.template_items,
-          })),
-        );
-      }
-    } catch (err) {
-      console.error("unexpected error fetching template works", err);
-      setError(err as PostgrestError);
-    }
-    setLoading(false);
-  }, [templateTypeId]);
-
-  useEffect(() => {
-    fetchWorks();
-  }, [fetchWorks]);
-
-  return { works, setWorks, loading, error, refetch: fetchWorks };
+  return {
+    works: query.data ?? [],
+    setWorks,
+    // isLoading: a disabled query (no templateTypeId) must not read as loading.
+    loading: query.isLoading,
+    error: query.error as PostgrestError | null,
+    refetch,
+  };
 }
 
 export function useCreateTemplateWork() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
 
@@ -93,6 +111,7 @@ export function useCreateTemplateWork() {
       setError(error);
       return { data: null, error };
     }
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     return { data, error: null };
   }
 
@@ -100,6 +119,7 @@ export function useCreateTemplateWork() {
 }
 
 export function useUpdateTemplateWork() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
 
@@ -122,6 +142,7 @@ export function useUpdateTemplateWork() {
       setError(error);
       return { error };
     }
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     return { error: null };
   }
 
@@ -129,6 +150,7 @@ export function useUpdateTemplateWork() {
 }
 
 export function useDeleteTemplateWork() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
 
@@ -162,6 +184,7 @@ export function useDeleteTemplateWork() {
       setError(error);
       return { error };
     }
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     return { error: null };
   }
 

@@ -8,6 +8,7 @@ import LoadingPage from "../ui/LoadingPage";
 import ErrorPage from "../ui/errorPage";
 import ColumnFiltersDialog, { optionsOf } from "../tables/filters/ColumnFiltersDialog";
 import { useProjectAgreements, useProjectOldMoney } from "../../hooks/agreements/useAgreements";
+import RefreshingBadge from "../ui/RefreshingBadge";
 import { useAuthUserId, useCan } from "../../hooks/permissions/useCan";
 import type { AgreementSummary } from "../../types/agreements.types";
 import { formatCurrency, formatDate } from "../../utils/helpper";
@@ -39,7 +40,7 @@ export default function ProjectAgreementsTab({ projectId }: { projectId: string 
   const { can: canPenalty } = useCan("create_contractor_penalty", projectId);
   const oldMoney = useProjectOldMoney(projectId);
   const [presetContractor, setPresetContractor] = useState<{ id: string; name: string | null } | null>(null);
-  const { data, isLoading, error } = useProjectAgreements(projectId);
+  const { data, isLoading, isFetching, error } = useProjectAgreements(projectId);
   const [scope, setScope] = useState<Scope>("all");
   const [openId, setOpenId] = useState<string | null>(null);
   const [newOpen, setNewOpen] = useState(false);
@@ -122,7 +123,10 @@ export default function ProjectAgreementsTab({ projectId }: { projectId: string 
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">الاتفاقيات</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-semibold text-gray-900">الاتفاقيات</h2>
+            <RefreshingBadge show={isFetching && !isLoading} />
+          </div>
           <p className="text-sm text-gray-500">اتفاقيات المقاولين في هذا المشروع والدفعات عليها</p>
         </div>
         <div className="flex items-center gap-3">

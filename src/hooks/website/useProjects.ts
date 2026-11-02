@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabaseClient";
 import {
   NewProjectFormValues,
@@ -174,11 +174,11 @@ const reorderProjects = async (projects: Project[]): Promise<void> => {
   if (error) throw new Error(error.message);
 };
 
-export const useProjectsQuery = () =>
-  useQuery({
-    queryKey: PROJECTS_QUERY_KEY,
-    queryFn: fetchProjects,
-  });
+// Exported for the background prefetcher (src/lib/prefetch).
+export const websiteProjectsQueryOptions = () =>
+  queryOptions({ queryKey: PROJECTS_QUERY_KEY, queryFn: fetchProjects });
+
+export const useProjectsQuery = () => useQuery(websiteProjectsQueryOptions());
 
 export const useProjectQuery = (id: string) =>
   useQuery({

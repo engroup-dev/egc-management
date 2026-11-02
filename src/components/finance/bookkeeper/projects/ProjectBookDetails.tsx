@@ -1,6 +1,7 @@
 import { useBookProject } from "../../../../hooks/projects/useBookProjects";
 import ProjectBookDetailsSkeleton from "../../../ui/loading/ProjectBookDetailsSkeleton";
 import Tabs from "../../../ui/Tabs";
+import RefreshingBadge from "../../../ui/RefreshingBadge";
 import BookProjectExpenseNotPaidTab from "../tabs/BookProjectExpenseNotPaidTab";
 import BookProjectExpensePercentageTab from "../tabs/BookProjectExpensePercentageTab";
 import BookProjectExpenseTab from "../tabs/BookProjectExpenseTab";
@@ -9,8 +10,14 @@ import BookRefundTab from "../tabs/BookRefundTab";
 import BookProjectUndistributedExpenseTab from "../tabs/BookProjectUndistributedExpenseTab";
 
 const ProjectBookDetails = ({ id }: { id: string }) => {
-  const { project, loading, error, addExpense, addExpensePercentage } =
-    useBookProject(id);
+  const {
+    project,
+    loading,
+    refreshing,
+    error,
+    addExpense,
+    addExpensePercentage,
+  } = useBookProject(id);
 
   const tabs = [
     {
@@ -67,6 +74,7 @@ const ProjectBookDetails = ({ id }: { id: string }) => {
   }
   return (
     <div>
+      <RefreshingBadge show={refreshing} />
       <div>
         <Tabs tabs={tabs} defaultTab="materials" />
       </div>

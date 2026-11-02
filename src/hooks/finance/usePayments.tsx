@@ -1,57 +1,69 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Account, ProjectExpenses } from "../../types/global.type";
 import { supabase } from "../../lib/supabaseClient";
+import { TIERS } from "../../lib/queryClient";
 import { projectExpensePayments } from "../../types/extended.type";
 import { PostgrestError } from "@supabase/supabase-js";
 import { ExpensePaymentFormValues } from "../../types/schema/ProjectBook.schema";
 import { useAuth } from "../useAuth";
 
+export const expensePaymentsKey = (expenseId: string) =>
+  ["finance", "expense-payments", expenseId] as const;
+
+interface ExpensePaymentsData {
+  payment: projectExpensePayments[];
+  expense: ProjectExpenses;
+  accounts: Account[];
+}
+
+async function fetchExpensePayments(
+  expenseId: string,
+): Promise<ExpensePaymentsData> {
+  const { data, error } = await supabase
+    .from("expense_payments")
+    .select("*, accounts(currency, id, type), users(*)")
+    .eq("expense_id", expenseId);
+  if (error) throw error;
+
+  const { data: expenseData, error: expenseError } = await supabase
+    .from("project_expenses")
+    .select("*")
+    .eq("id", expenseId)
+    .single();
+  if (expenseError) throw expenseError;
+
+  const { data: accountsData, error: accountsError } = await supabase
+    .from("accounts")
+    .select("*")
+    .eq("owner_type", "project")
+    .eq("owner_id", expenseData.project_id);
+  if (accountsError) throw accountsError;
+
+  return { payment: data, expense: expenseData, accounts: accountsData ?? [] };
+}
+
+export const expensePaymentsQueryOptions = (expenseId: string) =>
+  queryOptions({
+    queryKey: expensePaymentsKey(expenseId),
+    queryFn: () => fetchExpensePayments(expenseId),
+    enabled: !!expenseId,
+    ...TIERS.C,
+  });
+
 export function useExpensePayments(expenseId: string) {
-  const [payment, setPayment] = useState<projectExpensePayments[] | null>(null);
-  const [expense, setExpense] = useState<ProjectExpenses | null>(null);
-  const [accounts, setAccounts] = useState<Account[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const query = useQuery(expensePaymentsQueryOptions(expenseId));
+  const payment = query.data?.payment ?? null;
+  const expense = query.data?.expense ?? null;
+  const accounts = query.data?.accounts ?? null;
+  // An empty id never fetches; don't leave the caller on a spinner.
+  const loading = !!expenseId && query.isPending;
+  const error = query.error
+    ? ((query.error as PostgrestError)?.message ?? String(query.error))
+    : null;
   const [submitting, setSubmitting] = useState(false);
   const { user } = useAuth();
-
-  useEffect(() => {
-    async function fetchPayment() {
-      setLoading(true);
-      setError(null);
-      try {
-        const { data, error } = await supabase
-          .from("expense_payments")
-          .select("*, accounts(currency, id, type), users(*)")
-          .eq("expense_id", expenseId);
-        if (error) throw error;
-
-        const { data: expenseData, error: expenseError } = await supabase
-          .from("project_expenses")
-          .select("*")
-          .eq("id", expenseId)
-          .single();
-        if (expenseError) throw expenseError;
-
-        const { data: accountsData, error: accountsError } = await supabase
-          .from("accounts")
-          .select("*")
-          .eq("owner_type", "project")
-          .eq("owner_id", expenseData.project_id);
-        if (accountsError) throw accountsError;
-
-        setPayment(data);
-        setExpense(expenseData);
-        setAccounts(accountsData ?? []);
-      } catch (err: unknown) {
-        setError((err as PostgrestError)?.message ?? String(err));
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchPayment();
-  }, [expenseId]);
 
   const addPayment = async (form: ExpensePaymentFormValues) => {
     setSubmitting(true);
@@ -238,6 +250,7 @@ export function useExpensePayments(expenseId: string) {
 
       if (updateProjectError) throw updateProjectError;
 
+      void queryClient.invalidateQueries({ queryKey: ["finance"] });
       return { success: true, error: null, data: expensePayment };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -604,6 +617,7 @@ export function useExpensePayments(expenseId: string) {
         }
       }
 
+      void queryClient.invalidateQueries({ queryKey: ["finance"] });
       return { success: true, error: null, data: updatedPayment };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -775,9 +789,18 @@ export function useExpensePayments(expenseId: string) {
       }
 
       // refresh local state بدون reload
-      setPayment((prev) =>
-        prev ? prev.filter((p) => p.id !== paymentId) : prev,
+      queryClient.setQueryData<ExpensePaymentsData>(
+        expensePaymentsKey(expenseId),
+        (prev) =>
+          prev
+            ? {
+                ...prev,
+                payment: prev.payment.filter((p) => p.id !== paymentId),
+              }
+            : prev,
       );
+      // amount_paid / account totals changed server-side too
+      void queryClient.invalidateQueries({ queryKey: ["finance"] });
 
       return { success: true, error: null };
     } finally {

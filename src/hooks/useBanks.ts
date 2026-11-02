@@ -1,6 +1,6 @@
 // hooks/useBanks.ts
 import { useCallback, useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabaseClient";
 import { Bank } from "../types/global.type";
 import { normalizeError } from "./useMaps";
@@ -30,6 +30,10 @@ async function fetchBanks(): Promise<Bank[]> {
   return (data ?? []) as Bank[];
 }
 
+// Exported for the background prefetcher (src/lib/prefetch).
+export const banksQueryOptions = () =>
+  queryOptions({ queryKey: BANKS_KEY, queryFn: fetchBanks });
+
 export function useBanks() {
   const queryClient = useQueryClient();
   const [mutationError, setMutationError] = useState<
@@ -41,10 +45,7 @@ export function useBanks() {
     isPending: loading,
     error: fetchError,
     refetch: refetchBase,
-  } = useQuery({
-    queryKey: BANKS_KEY,
-    queryFn: fetchBanks,
-  });
+  } = useQuery(banksQueryOptions());
 
   const error =
     mutationError ??

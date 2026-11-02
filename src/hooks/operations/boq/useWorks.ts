@@ -1,5 +1,6 @@
 import { PostgrestError } from "@supabase/supabase-js";
-import { useCallback, useEffect, useState } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Dispatch, SetStateAction, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import { TemplateWorkFull, WorkFull } from "./types";
 import { useBulkCreateItems } from "./useItems";
@@ -38,32 +39,44 @@ export async function fetchWorksForType(typeId: string): Promise<WorkFull[]> {
   return (data ?? []) as unknown as WorkFull[];
 }
 
+export const boqTypeWorksKey = (typeId: string) =>
+  ["boq", "works", typeId] as const;
+
+export const boqTypeWorksQueryOptions = (typeId: string) =>
+  queryOptions({
+    queryKey: boqTypeWorksKey(typeId),
+    queryFn: () => fetchWorksForType(typeId),
+    enabled: !!typeId,
+  });
+
 export function useTypeWorks(typeId: string) {
-  const [works, setWorks] = useState<WorkFull[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
+  const queryClient = useQueryClient();
+  const query = useQuery(boqTypeWorksQueryOptions(typeId));
 
-  const fetchWorks = useCallback(async () => {
+  // Callers apply optimistic reorders / quantity edits through this.
+  const setWorks: Dispatch<SetStateAction<WorkFull[]>> = (action) => {
+    queryClient.setQueryData<WorkFull[]>(boqTypeWorksKey(typeId), (prev) =>
+      typeof action === "function" ? action(prev ?? []) : action,
+    );
+  };
+
+  const refetch = async () => {
     if (!typeId) return;
-    setLoading(true);
-    try {
-      const data = await fetchWorksForType(typeId);
-      setWorks(data);
-      setError(null);
-    } catch (err) {
-      setError(err as PostgrestError);
-    }
-    setLoading(false);
-  }, [typeId]);
+    await query.refetch();
+  };
 
-  useEffect(() => {
-    fetchWorks();
-  }, [fetchWorks]);
-
-  return { works, setWorks, loading, error, refetch: fetchWorks };
+  return {
+    works: query.data ?? [],
+    setWorks,
+    // isLoading: a disabled query (no typeId) must not read as loading.
+    loading: query.isLoading,
+    error: query.error as PostgrestError | null,
+    refetch,
+  };
 }
 
 export function useCreateWork() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
 
@@ -94,6 +107,7 @@ export function useCreateWork() {
       setError(error);
       return { data: null, error };
     }
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     return { data, error: null };
   }
 
@@ -101,6 +115,7 @@ export function useCreateWork() {
 }
 
 export function useCreateWorkFromTemplate() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
   const { bulkCreateItems } = useBulkCreateItems();
@@ -146,6 +161,8 @@ export function useCreateWorkFromTemplate() {
     );
 
     setLoading(false);
+    // The work row exists either way, so refresh even if items failed.
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     if (itemsError) {
       setError(itemsError);
       return { data: work, error: itemsError };
@@ -157,6 +174,7 @@ export function useCreateWorkFromTemplate() {
 }
 
 export function useUpdateWork() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
 
@@ -176,6 +194,7 @@ export function useUpdateWork() {
       setError(error);
       return { error };
     }
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     return { error: null };
   }
 
@@ -183,6 +202,7 @@ export function useUpdateWork() {
 }
 
 export function useDeleteWork() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
 
@@ -216,6 +236,7 @@ export function useDeleteWork() {
       setError(error);
       return { error };
     }
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     return { error: null };
   }
 

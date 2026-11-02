@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useDistributionBatches } from "../../hooks/company/useDistributionBatches";
 import LoadingPage from "../../components/ui/LoadingPage";
 import ErrorPage from "../../components/ui/errorPage";
+import RefreshingBadge from "../../components/ui/RefreshingBadge";
 import { formatCurrency } from "../../utils/helpper";
 import BatchSharesPdfButton from "../../components/pdf-buttons/BatchSharesPdfButton";
 import { ArrowLeft } from "lucide-react";
@@ -9,7 +10,7 @@ import { ArrowLeft } from "lucide-react";
 const CURRENCIES = ["LYD", "USD", "EUR"];
 
 const DistributionBatchesPage = () => {
-  const { batches, loading, error } = useDistributionBatches();
+  const { batches, loading, refreshing, error } = useDistributionBatches();
   const navigate = useNavigate();
 
   if (loading) return <LoadingPage label="جاري تحميل سجل التوزيعات" />;
@@ -23,7 +24,10 @@ const DistributionBatchesPage = () => {
   return (
     <div className="p-4" dir="rtl">
       <div className="max-w-3xl mx-auto mb-6">
-        <h1 className="text-xl font-semibold text-gray-800">سجل التوزيعات</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-semibold text-gray-800">سجل التوزيعات</h1>
+          <RefreshingBadge show={refreshing} />
+        </div>
         <p className="text-sm text-gray-400 mt-0.5">
           اضغط على أي دفعة لعرض تفاصيلها
         </p>

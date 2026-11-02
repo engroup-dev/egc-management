@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { ProjectExpenses } from "../../../types/global.type";
 import { VendorWithBankApprover } from "../../../types/extended.type";
 import { PostgrestError } from "@supabase/supabase-js";
 import { supabase } from "../../../lib/supabaseClient";
+import { TIERS } from "../../../lib/queryClient";
 
 export interface ProjectExpenseGroup {
   projectId: string;
@@ -11,92 +12,100 @@ export interface ProjectExpenseGroup {
   expenses: ProjectExpenses[];
 }
 
-export function useVendor(vendorId: string) {
-  const [vendor, setVendor] = useState<VendorWithBankApprover | null>(null);
-  const [expenses, setExpenses] = useState<ProjectExpenses[]>([]);
-  const [groupedExpenses, setGroupedExpenses] = useState<ProjectExpenseGroup[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
+type VendorData = {
+  vendor: VendorWithBankApprover;
+  expenses: ProjectExpenses[];
+  groupedExpenses: ProjectExpenseGroup[];
+};
 
-  const fetchVendor = useCallback(async () => {
-      setLoading(true);
-      try {
-        const { data, error } = await supabase
-          .from("vendors")
-          .select(
-            `*,
-            vendor_specialities (
-              speciality_id,
-              speciality:specialities (id, name)
-            ),
-            bank_approved_by_user:users!vendors_bank_approved_by_fkey (
-              first_name,
-              last_name
-            )
-          `,
-          )
-          .eq("id", vendorId)
-          .single();
+export const supplyChainVendorKey = (vendorId: string) =>
+  ["supply-chain", "vendor", vendorId] as const;
 
-        if (error) {
-          console.error("error fetching vendor", error);
-          setError(error);
-        } else {
-          setVendor(data as unknown as VendorWithBankApprover);
-        }
+async function fetchSupplyChainVendor(vendorId: string): Promise<VendorData> {
+  const { data, error } = await supabase
+    .from("vendors")
+    .select(
+      `*,
+      vendor_specialities (
+        speciality_id,
+        speciality:specialities (id, name)
+      ),
+      bank_approved_by_user:users!vendors_bank_approved_by_fkey (
+        first_name,
+        last_name
+      )
+    `,
+    )
+    .eq("id", vendorId)
+    .single();
 
-        const { data: expensesData, error: expensesError } = await supabase
-          .from("project_expenses")
-          .select("*, projects(id, name, serial_number)")
-          .eq("vendor_id", vendorId)
-          .is("deleted_at", null);
+  if (error) {
+    console.error("error fetching vendor", error);
+    throw error;
+  }
 
-        if (expensesError) {
-          console.error("error fetching vendor expenses", expensesError);
-          setError(expensesError);
-        } else {
-          const flat = expensesData ?? [];
-          setExpenses(flat);
+  const { data: expensesData, error: expensesError } = await supabase
+    .from("project_expenses")
+    .select("*, projects(id, name, serial_number)")
+    .eq("vendor_id", vendorId)
+    .is("deleted_at", null);
 
-          // Group by project
-          const groupMap = new Map<string, ProjectExpenseGroup>();
-          for (const expense of flat) {
-            const project = expense.projects ;
-            const projectId = project?.id ?? "unknown";
+  if (expensesError) {
+    console.error("error fetching vendor expenses", expensesError);
+    throw expensesError;
+  }
 
-            if (!groupMap.has(projectId)) {
-              groupMap.set(projectId, {
-                projectId,
-                projectName: project?.name ?? "Unknown Project",
-                projectSerialNumber: project?.serial_number ?? null,
-                expenses: [],
-              });
-            }
-            const group = groupMap.get(projectId);
-            if (group) {
-              group.expenses.push(expense);
-            }
-          }
+  const flat = expensesData ?? [];
 
-          setGroupedExpenses(Array.from(groupMap.values()));
-        }
-      } catch (err) {
-        console.error("unexpected error fetching vendor", err);
-        setError(err as PostgrestError);
-      }
-      setLoading(false);
-  }, [vendorId]);
+  // Group by project
+  const groupMap = new Map<string, ProjectExpenseGroup>();
+  for (const expense of flat) {
+    const project = expense.projects;
+    const projectId = project?.id ?? "unknown";
 
-  useEffect(() => {
-    fetchVendor();
-  }, [fetchVendor]);
+    if (!groupMap.has(projectId)) {
+      groupMap.set(projectId, {
+        projectId,
+        projectName: project?.name ?? "Unknown Project",
+        projectSerialNumber: project?.serial_number ?? null,
+        expenses: [],
+      });
+    }
+    const group = groupMap.get(projectId);
+    if (group) {
+      group.expenses.push(expense);
+    }
+  }
 
   return {
-    vendor,
-    expenses,
-    groupedExpenses,
-    loading,
-    error,
-    refetch: fetchVendor,
+    vendor: data as unknown as VendorWithBankApprover,
+    expenses: flat,
+    groupedExpenses: Array.from(groupMap.values()),
+  };
+}
+
+// Carries project_expenses, so it is a money read (tier C).
+export const supplyChainVendorQueryOptions = (vendorId: string) =>
+  queryOptions({
+    queryKey: supplyChainVendorKey(vendorId),
+    queryFn: () => fetchSupplyChainVendor(vendorId),
+    enabled: !!vendorId,
+    ...TIERS.C,
+  });
+
+export function useVendor(vendorId: string) {
+  const query = useQuery(supplyChainVendorQueryOptions(vendorId));
+
+  const refetch = async () => {
+    await query.refetch();
+  };
+
+  return {
+    vendor: query.data?.vendor ?? null,
+    expenses: query.data?.expenses ?? [],
+    groupedExpenses: query.data?.groupedExpenses ?? [],
+    loading: query.isPending && !!vendorId,
+    error: query.error as PostgrestError | null,
+    refetch,
   };
 }

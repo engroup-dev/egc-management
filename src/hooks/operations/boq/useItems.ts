@@ -1,4 +1,5 @@
 import { PostgrestError } from "@supabase/supabase-js";
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useAuth } from "../../useAuth";
 import { supabase } from "../../../lib/supabaseClient";
@@ -25,6 +26,7 @@ export interface ItemFormValues {
 }
 
 export function useCreateItem() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
   const { user } = useAuth();
@@ -58,6 +60,7 @@ export function useCreateItem() {
       setError(error);
       return { data: null, error };
     }
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     return { data, error: null };
   }
 
@@ -65,6 +68,7 @@ export function useCreateItem() {
 }
 
 export function useUpdateItem() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
 
@@ -89,6 +93,7 @@ export function useUpdateItem() {
       setError(error);
       return { error };
     }
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     return { error: null };
   }
 
@@ -106,6 +111,7 @@ export interface QuantityUpdate {
  * NOT NULL columns on the candidate row before checking for a conflict.
  */
 export function useBulkUpdateQuantities() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
 
@@ -138,6 +144,7 @@ export function useBulkUpdateQuantities() {
       setError(error);
       return { error };
     }
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     return { error: null };
   }
 
@@ -153,6 +160,7 @@ export interface BulkItemInput {
 }
 
 export function useBulkCreateItems() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
   const { user } = useAuth();
@@ -185,6 +193,7 @@ export function useBulkCreateItems() {
       setError(error);
       return { data: null, error };
     }
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     return { data, error: null };
   }
 
@@ -192,6 +201,7 @@ export function useBulkCreateItems() {
 }
 
 export function useDeleteItem() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
 
@@ -210,6 +220,7 @@ export function useDeleteItem() {
       setError(error);
       return { error };
     }
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     return { error: null };
   }
 

@@ -3,6 +3,7 @@ import { NotPiadExpenseColumns } from "../../../components/tables/columns/NotPia
 import GenericTable from "../../../components/tables/table";
 import ErrorPage from "../../../components/ui/errorPage";
 import LoadingPage from "../../../components/ui/LoadingPage";
+import RefreshingBadge from "../../../components/ui/RefreshingBadge";
 import { useNotPiadExpense } from "../../../hooks/finance/payments/useNotPiadExpense";
 import { ExpenseWithProject } from "../../../types/projects.type";
 
@@ -13,7 +14,7 @@ const MATERIAL_EXPENSE_TYPES = ["material"];
 const LABOR_EXPENSE_TYPES = ["labor"];
 
 const NotPiadExpensePage = () => {
-  const { error, expenses, loading } = useNotPiadExpense();
+  const { error, expenses, loading, refreshing } = useNotPiadExpense();
   const [activeTab, setActiveTab] = useState<ExpenseCategoryTab>("all");
 
   const filteredExpenses = useMemo(() => {
@@ -67,6 +68,7 @@ const NotPiadExpensePage = () => {
         >
           عمالة
         </button>
+        <RefreshingBadge show={refreshing} />
       </div>
 
       <div>

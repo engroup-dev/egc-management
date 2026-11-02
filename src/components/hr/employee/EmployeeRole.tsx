@@ -1,13 +1,9 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../../../lib/supabaseClient";
 import { FullEmployee } from "../../../types/extended.type";
 import { useCan } from "../../../hooks/permissions/useCan";
-
-interface Role {
-  id: string;
-  name: string;
-  code: string;
-}
+import { settingsRolesQueryOptions } from "../../../hooks/settings/useRoles";
 
 interface EmployeeRoleProps {
   employee: FullEmployee;
@@ -15,7 +11,6 @@ interface EmployeeRoleProps {
 }
 
 const EmployeeRole = ({ employee, onUpdated }: EmployeeRoleProps) => {
-  const [roles, setRoles] = useState<Role[]>([]);
   const [selectedRole, setSelectedRole] = useState(employee.user_role?.role_id);
   const [loading, setLoading] = useState(false);
 
@@ -28,25 +23,9 @@ const EmployeeRole = ({ employee, onUpdated }: EmployeeRoleProps) => {
   // exactly who could edit this before.
   const { can: canEdit, loading: checkingPermission } = useCan("manage_users");
 
-  // -----------------------------
-  // Fetch roles
-  // -----------------------------
-  useEffect(() => {
-    const fetchRoles = async () => {
-      const { data, error } = await supabase
-        .from("roles")
-        .select("id, name, code");
-
-      if (error) {
-        console.error(error);
-        return;
-      }
-
-      setRoles(data || []);
-    };
-
-    fetchRoles();
-  }, []);
+  // Roles catalog, shared with the settings roles list.
+  const { data: roles = [] } = useQuery(settingsRolesQueryOptions());
+  const queryClient = useQueryClient();
 
   // -----------------------------
   // Update role
@@ -78,6 +57,8 @@ const EmployeeRole = ({ employee, onUpdated }: EmployeeRoleProps) => {
     }
 
     setSelectedRole(roleId);
+    // Role detail pages list the users holding each role.
+    queryClient.invalidateQueries({ queryKey: ["settings", "role"] });
     await onUpdated?.();
   };
 

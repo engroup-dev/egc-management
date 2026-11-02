@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { agreementsDb } from "../../lib/agreementsDb";
 import { supabase } from "../../lib/supabaseClient";
 import { uploadFile } from "../../lib/storage-client";
@@ -146,8 +146,9 @@ export function useProjectOldMoney(projectId: string) {
 }
 
 /** Units of measurement (lookups.units). activeOnly: what item rows may pick. */
-export function useUnits(activeOnly = true) {
-  return useQuery({
+// Exported for the background prefetcher (src/lib/prefetch).
+export const unitsQueryOptions = (activeOnly = true) =>
+  queryOptions({
     queryKey: ["lookups", "units", activeOnly ? "active" : "all"],
     queryFn: async (): Promise<Unit[]> => {
       let q = agreementsDb
@@ -162,6 +163,9 @@ export function useUnits(activeOnly = true) {
       return data ?? [];
     },
   });
+
+export function useUnits(activeOnly = true) {
+  return useQuery(unitsQueryOptions(activeOnly));
 }
 
 // ─── Writes ──────────────────────────────────────────────────────────────────
