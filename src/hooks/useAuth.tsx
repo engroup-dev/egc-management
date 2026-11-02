@@ -8,8 +8,7 @@ import {
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { authService } from "../services/authService";
-import { supabase } from "../lib/supabaseClient";
-import { UserData } from "../lib/userStorage";
+import { UserData, getUserData } from "../lib/userStorage";
 import { trackSession } from "../lib/sessionTracking";
 import { prefetchAppCatalogs } from "../lib/prefetchCatalogs";
 
@@ -24,9 +23,24 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Read once in index.tsx before the first render, so AuthProvider starts
+// with the locally stored profile instead of a `loading` frame (which
+// made RequirePasswordChange render nothing for the whole app).
+let preloadedUser: UserData | null | undefined = undefined;
+
+export async function preloadAuthUser(): Promise<void> {
+  try {
+    preloadedUser = await getUserData();
+  } catch {
+    preloadedUser = null;
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<UserData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<UserData | null>(
+    preloadedUser ?? null,
+  );
+  const [loading, setLoading] = useState(preloadedUser === undefined);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const queryClient = useQueryClient();
 
@@ -37,7 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadUser = async () => {
     try {
-      setLoading(true);
+      if (preloadedUser === undefined) setLoading(true);
 
       // Try local storage first (FAST - 10-50ms)
       const localUser = await authService.getCurrentUser();
@@ -122,52 +136,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [isRefreshing]);
 
-  // -------------------------------------------------------------------
-  // ISSUE 13 — throw away every cached answer when the account changes
-  // -------------------------------------------------------------------
-  // React Query caches by key, and almost none of this app's keys
-  // mention who asked. ["employees"], ["projects"], ["payroll"] — all of
-  // them are really "employees, as seen by whoever is logged in", and
-  // the cache survives a logout because the QueryClient is created once
-  // in index.tsx and lives as long as the window does.
-  //
-  // Sign out and sign back in as somebody else and, until each query
-  // happens to go stale, the second person reads the first person's
-  // data. For most screens that is a stale list. For permissions it is
-  // an access-control answer computed for the wrong person, which is
-  // why this exists.
-  //
-  // useCan is keyed by user id and so is already safe on its own. This
-  // is the blanket that covers everything that is not.
-  //
-  // WHY THE SUPABASE EVENT AND NOT THE `user` STATE. Three code paths
-  // sign the user out: AuthProvider.logout, the background refresh in
-  // loadUser when the session has genuinely expired, and
-  // authService.getCurrentUser when it finds the account deactivated.
-  // Only the first goes through this provider. All three end in
-  // supabase.auth.signOut(), so that is where the listener belongs.
-  useEffect(() => {
-    let lastUserId: string | null | undefined = undefined;
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      const nextUserId = session?.user?.id ?? null;
-
-      // First event just records who we started as. Clearing here would
-      // wipe the cache on every app start for no reason.
-      if (lastUserId === undefined) {
-        lastUserId = nextUserId;
-        return;
-      }
-
-      // TOKEN_REFRESHED fires often and does not change the account.
-      if (nextUserId === lastUserId) return;
-
-      lastUserId = nextUserId;
-      queryClient.clear();
-    });
-
-    return () => sub.subscription.unsubscribe();
-  }, [queryClient]);
+  // ISSUE 13 (clear the cache when the account changes) now lives in
+  // PersistedQueryProvider, which has to order it against switching the
+  // on-disk bucket: stop saving the old user's cache, clear, restore the
+  // new user's. Clearing from here raced that and wiped the old bucket.
 
   // Record/update this device's session while a user is logged in.
   useEffect(() => {

@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
+import { useIsRestoring } from "@tanstack/react-query";
+import { useAuthUserId } from "../lib/authUser";
 import { HashRouter as Router, Routes, Route } from "react-router-dom";
-import { supabase } from "../lib/supabaseClient";
 import Dashboard from "./dashboard/dashboard";
 import LoginForm from "./auth/LoginForm";
 import MainMenu from "../pages/MainMenu";
@@ -28,24 +29,13 @@ import NotificationsPage from "../pages/notifications/NotificationsPage";
 import NotificationSettingsPage from "../pages/profile/NotificationSettingsPage";
 
 const AppRouter = () => {
-  const [session, setSession] = useState(false);
+  // Known synchronously from the stored session (src/lib/authUser.ts), so
+  // the first render already picks the right tree — no login-form flash
+  // on boot while an async getSession() resolves.
+  const { userId } = useAuthUserId();
+  const session = !!userId;
+  const isRestoring = useIsRestoring();
   const { refreshUser } = useAuth();
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(!!session);
-    });
-
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(!!session);
-      },
-    );
-
-    return () => {
-      authListener?.subscription?.unsubscribe();
-    };
-  }, []);
 
   useEffect(() => {
     if (!session) return; // Only refresh when logged in
@@ -90,6 +80,13 @@ const AppRouter = () => {
     return () =>
       document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [session, refreshUser]);
+
+  // The on-disk cache for this user is still being read (typically well
+  // under 200 ms). Render a plain backdrop rather than mounting pages whose
+  // queries would show spinners for data that is about to appear.
+  if (isRestoring) {
+    return <div className="min-h-screen bg-background" dir="rtl" />;
+  }
 
   return (
     <Routes>

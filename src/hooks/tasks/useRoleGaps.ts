@@ -157,7 +157,7 @@ export function useRoleGaps(templateTaskIds: string[], targetBoardIds: string[])
   return {
     gaps: query.data?.gaps ?? [],
     filled: query.data?.filled ?? [],
-    loading: query.isFetching,
+    loading: query.isPending,
     error: query.error,
   };
 }

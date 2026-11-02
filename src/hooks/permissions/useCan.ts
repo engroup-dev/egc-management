@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { permissionsDb } from "../../lib/permissionsDb";
 import { supabase } from "../../lib/supabaseClient";
 import { TIERS } from "../../lib/queryClient";
+import { useAuthUserId } from "../../lib/authUser";
 import type { EffectivePermissionRow } from "../../types/permissions.types";
 
 // =====================================================================
@@ -69,52 +69,13 @@ import type { EffectivePermissionRow } from "../../types/permissions.types";
 // either.
 // ---------------------------------------------------------------------
 
-/**
- * The id of the account whose session the Supabase client is actually
- * using — not the one in local storage.
- *
- * These are usually the same, and when they are not it is precisely the
- * moment this matters: AuthProvider restores a UserData from local
- * storage synchronously on boot, while the Supabase session is read
- * from disk and refreshed asynchronously. During that window the local
- * user exists and auth.uid() does not, so a permission answer keyed on
- * the local user would be filed under the right name with the wrong
- * contents.
- *
- * `resolved` is false only until the first answer arrives — after that
- * a null userId genuinely means signed out.
- */
-export function useAuthUserId(): { userId: string | null; resolved: boolean } {
-  const [state, setState] = useState<{
-    userId: string | null;
-    resolved: boolean;
-  }>({ userId: null, resolved: false });
+// The signed-in user id now lives in one shared store (src/lib/authUser.ts),
+// read synchronously from the stored session so it is known on the first
+// render. Re-exported here so every existing import keeps working.
+export { useAuthUserId } from "../../lib/authUser";
 
-  useEffect(() => {
-    let cancelled = false;
-
-    supabase.auth.getSession().then(({ data }) => {
-      if (!cancelled) {
-        setState({ userId: data.session?.user?.id ?? null, resolved: true });
-      }
-    });
-
-    // Covers sign-in, sign-out, token refresh and the account being
-    // switched underneath us. Fires for the current tab only, which is
-    // all this app has.
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!cancelled) {
-        setState({ userId: session?.user?.id ?? null, resolved: true });
-      }
-    });
-
-    return () => {
-      cancelled = true;
-      sub.subscription.unsubscribe();
-    };
-  }, []);
-
-  return state;
+function toPermissionSet(names: string[]): Set<string> {
+  return new Set(names);
 }
 
 export const myPermissionsKey = (userId: string | null, projectId?: string) => [
@@ -143,21 +104,34 @@ export interface MyPermissionsResult {
 export function useMyPermissions(projectId?: string): MyPermissionsResult {
   const { userId, resolved } = useAuthUserId();
 
-  const query = useQuery<Set<string>>({
+  // The cached value is a plain string[] so it survives the JSON
+  // round-trip to disk (a Set serializes to {}). `select` turns it into
+  // a Set for callers; a stable module-level function means React Query
+  // only rebuilds the Set when the array actually changes.
+  const query = useQuery<string[], Error, Set<string>>({
     queryKey: myPermissionsKey(userId, projectId),
     enabled: !!userId,
     ...TIERS.E,
+    select: toPermissionSet,
     queryFn: async () => {
+      // Never cache an answer computed for the wrong caller. The id in
+      // the key comes from the stored session; if supabase-js could not
+      // attach that session (expired and offline, or signed out
+      // underneath us) the resolver would see auth.uid() = null and deny
+      // everything. Fail instead, so React Query retries and the
+      // previously cached answer stays on screen.
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData.session?.user?.id !== userId) {
+        throw new Error("session not attached yet");
+      }
       const { data, error } = await permissionsDb.rpc(
         "my_effective_permissions",
         projectId ? { p_project_id: projectId } : {},
       );
       if (error) throw error;
-      return new Set(
-        ((data ?? []) as EffectivePermissionRow[])
-          .filter((row) => row.allowed)
-          .map((row) => row.permission_name),
-      );
+      return ((data ?? []) as EffectivePermissionRow[])
+        .filter((row) => row.allowed)
+        .map((row) => row.permission_name);
     },
   });
 
@@ -171,7 +145,10 @@ export function useMyPermissions(projectId?: string): MyPermissionsResult {
     // once we know there is no session. Signed out is not "still
     // loading" — it is a settled deny.
     isPending: !resolved || (!!userId && query.isPending),
-    isError: query.isError,
+    // A failed background refetch must not take away an answer we
+    // already have: keep serving the cached set and only report an
+    // error when there is nothing to fall back on.
+    isError: query.isError && query.data === undefined,
   };
 }
 

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, Link, useNavigate } from "react-router-dom";
-import { QueryClient, QueryClientProvider, MutationCache } from "@tanstack/react-query";
 import {
   Search,
   ChevronLeft,
@@ -27,8 +26,7 @@ import {
 import { useSidebar } from "../../contexts/SidebarContext";
 import { supabase } from "../../lib/supabaseClient";
 import { useTasksSidebar, type SpaceType } from "../../hooks/tasks/useTasksSidebar";
-import { extractErrorMessage } from "../../hooks/tasks/extractErrorMessage";
-import { emitTaskError, setTaskErrorListener } from "../../hooks/tasks/taskErrorBus";
+import { setTaskErrorListener } from "../../hooks/tasks/taskErrorBus";
 import { searchSidebarEntities, type EntityMatches } from "../../hooks/tasks/tasksSidebarSearch";
 import Tooltip from "../ui/Tooltip";
 import NewSpaceModal from "./NewSpaceModal";
@@ -38,19 +36,10 @@ import { useTaskUndoHotkeys } from "../../hooks/tasks/useTaskUndoHotkeys";
 import TaskUndoToast from "../tasks/TaskUndoToast";
 import { CreateTaskDialogProvider } from "../tasks/schedule/CreateTaskDialogContext";
 
-// A failed mutation anywhere in this module (most commonly the
-// completion-gate trigger rejecting a status change, or the reparent
-// cycle guard) used to fail completely silently — the click just did
-// nothing. Rather than add an onError to every one of the ~70
-// useMutation() calls across the module's hooks, this module gets its
-// own QueryClient (nested inside the app's real one, still hitting the
-// same Supabase client underneath) whose MutationCache reports every
-// mutation error to one toast, for free, with no per-call-site changes.
-const tasksQueryClient = new QueryClient({
-  mutationCache: new MutationCache({
-    onError: (error) => emitTaskError(extractErrorMessage(error)),
-  }),
-});
+// Mutation errors anywhere in this module are toasted by <TaskErrorToast/>.
+// The MutationCache hook that feeds it lives on the app's QueryClient
+// (src/lib/queryClient.ts) — this module used to own a second client for
+// that, which kept every task screen out of the persisted cache.
 
 function TaskErrorToast() {
   const [message, setMessage] = useState<string | null>(null);
@@ -550,21 +539,20 @@ const TasksLayoutInner = () => {
   );
 };
 
-// Mounted inside the provider so it uses the module's own QueryClient —
-// the one every task hook reads from, so undo's invalidations refresh them.
+// Undo hotkeys + toast for the task module.
 function TaskUndoHost() {
   useTaskUndoHotkeys();
   return <TaskUndoToast />;
 }
 
 const TasksLayout = () => (
-  <QueryClientProvider client={tasksQueryClient}>
+  <>
     <CreateTaskDialogProvider>
       <TasksLayoutInner />
     </CreateTaskDialogProvider>
     <TaskErrorToast />
     <TaskUndoHost />
-  </QueryClientProvider>
+  </>
 );
 
 export default TasksLayout;
