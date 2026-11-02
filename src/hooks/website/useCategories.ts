@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabaseClient";
 import { CategoryFormValues } from "../../types/schema/website/category.schema";
 
@@ -63,11 +63,11 @@ const deleteCategory = async (id: string): Promise<void> => {
   if (error) throw new Error(error.message);
 };
 
-export const useCategoriesQuery = () =>
-  useQuery({
-    queryKey: CATEGORIES_QUERY_KEY,
-    queryFn: fetchCategories,
-  });
+// Exported for the background prefetcher (src/lib/prefetch).
+export const websiteCategoriesQueryOptions = () =>
+  queryOptions({ queryKey: CATEGORIES_QUERY_KEY, queryFn: fetchCategories });
+
+export const useCategoriesQuery = () => useQuery(websiteCategoriesQueryOptions());
 
 export const useCreateCategory = () => {
   const queryClient = useQueryClient();

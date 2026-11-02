@@ -6,11 +6,9 @@ import {
   ReactNode,
   useCallback,
 } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { authService } from "../services/authService";
 import { UserData, getUserData } from "../lib/userStorage";
 import { trackSession } from "../lib/sessionTracking";
-import { prefetchAppCatalogs } from "../lib/prefetchCatalogs";
 
 interface AuthContextType {
   user: UserData | null;
@@ -42,7 +40,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
   const [loading, setLoading] = useState(preloadedUser === undefined);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const queryClient = useQueryClient();
 
   // Load user on app start - RUNS ONCE
   useEffect(() => {
@@ -151,15 +148,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(interval);
   }, [user?.id]);
 
-  // Pre-warm the tier-A catalogs every logged-in session will read early
-  // (permission catalog, map types, assignable people, task types).
-  // Each is small, cached an hour, and reused across most screens, so
-  // kicking them off at login turns the first consuming render into a
-  // cache hit instead of a round-trip.
-  useEffect(() => {
-    if (!user?.id) return;
-    prefetchAppCatalogs(queryClient);
-  }, [user?.id, queryClient]);
+  // Catalog pre-warming moved into the background prefetcher
+  // (src/lib/prefetch), which starts once the on-disk cache is restored.
 
   const logout = useCallback(async () => {
     await authService.logout();

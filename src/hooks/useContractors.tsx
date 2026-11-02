@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { Contractors } from "../types/global.type";
 import { contractorWithSpecializations } from "../types/extended.type";
 import { supabase } from "../lib/supabaseClient";
@@ -28,11 +28,11 @@ const fetchContractors = async (): Promise<
   return (data ?? []) as unknown as contractorWithSpecializations[];
 };
 
-export const useContractorsQuery = () =>
-  useQuery({
-    queryKey: ["contractors"],
-    queryFn: fetchContractors,
-  });
+// Exported for the background prefetcher (src/lib/prefetch).
+export const contractorsQueryOptions = () =>
+  queryOptions({ queryKey: ["contractors"], queryFn: fetchContractors });
+
+export const useContractorsQuery = () => useQuery(contractorsQueryOptions());
 
 export function useContractors() {
   const { data = [], isPending: loading, error } = useContractorsQuery();

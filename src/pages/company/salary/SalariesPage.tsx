@@ -6,6 +6,7 @@ import BulkActionBar from "../../../components/tables/BulkActionBar";
 import KpiCard from "../../../components/ui/KpiCard";
 import { PayrollColumns } from "../../../components/tables/columns/PayrollColumns";
 import { usePayroll } from "../../../hooks/usePayroll";
+import RefreshingBadge from "../../../components/ui/RefreshingBadge";
 import { PayrollWithRelations } from "../../../types/extended.type";
 import { formatCurrency } from "../../../utils/helpper";
 import { getCurrentMonth, isInMonth } from "../../../utils/date";
@@ -15,7 +16,7 @@ const SalariesPage = () => {
   const [selectedRows, setSelectedRows] = useState<PayrollWithRelations[]>([]);
   const [markingPaid, setMarkingPaid] = useState(false);
 
-  const { payroll, loading, error, markAsPaid } = usePayroll();
+  const { payroll, loading, refreshing, error, markAsPaid } = usePayroll();
 
   const stats = useMemo(() => {
     const filtered = payroll.filter((p) => isInMonth(p.pay_date, month));
@@ -92,7 +93,10 @@ const SalariesPage = () => {
         initialSorting={[{ id: "status", desc: true }]}
         header={
           <div className="flex items-center justify-between w-full flex-wrap gap-3">
-            <h2 className="text-xl font-bold text-gray-900">رواتب الموظفين</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-gray-900">رواتب الموظفين</h2>
+              <RefreshingBadge show={refreshing} />
+            </div>
             <div className="relative">
               <Calendar
                 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"

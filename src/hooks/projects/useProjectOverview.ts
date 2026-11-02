@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabaseClient";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -96,13 +96,16 @@ const updateProjectOverview = async (
 
 // ─── Hooks ────────────────────────────────────────────────────────────────────
 
-export const useProjectOverview = (projectId: string) =>
-  useQuery({
+// Exported for the background prefetcher (src/lib/prefetch), which warms
+// the overview of every project after login.
+export const projectOverviewQueryOptions = (projectId: string) =>
+  queryOptions({
     queryKey: ["project", projectId, "overview"],
     queryFn: () => fetchProjectOverview(projectId),
-    enabled: !!projectId,
-    staleTime: 1000 * 60 * 5,
   });
+
+export const useProjectOverview = (projectId: string) =>
+  useQuery({ ...projectOverviewQueryOptions(projectId), enabled: !!projectId });
 
 export const useUpdateProjectOverview = (projectId: string) => {
   const queryClient = useQueryClient();

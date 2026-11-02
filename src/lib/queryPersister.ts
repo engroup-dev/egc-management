@@ -15,6 +15,33 @@ export const PERSIST_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 export const PERSIST_BUSTER =
   typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev";
 
+// Several queryFns return Map / Set / Date values (e.g. useMyWork's
+// lookup maps). Plain JSON turns those into {} or strings, and a screen
+// restored from disk would then crash on `.get` / `.has`. Tag them on the
+// way out and rebuild them on the way in.
+const TAG = "__rqT";
+
+function serialize(value: unknown): string {
+  return JSON.stringify(value, function (this: Record<string, unknown>, key, v) {
+    const raw = this[key];
+    if (raw instanceof Map) return { [TAG]: "Map", v: Array.from(raw.entries()) };
+    if (raw instanceof Set) return { [TAG]: "Set", v: Array.from(raw.values()) };
+    if (raw instanceof Date) return { [TAG]: "Date", v: raw.toISOString() };
+    return v;
+  });
+}
+
+function deserialize<T>(text: string): T {
+  return JSON.parse(text, (_key, v) => {
+    if (v && typeof v === "object" && typeof v[TAG] === "string") {
+      if (v[TAG] === "Map") return new Map(v.v);
+      if (v[TAG] === "Set") return new Set(v.v);
+      if (v[TAG] === "Date") return new Date(v.v);
+    }
+    return v;
+  }) as T;
+}
+
 // Per-user IndexedDB store. localforage is already a dependency (see
 // userStorage.ts); we use a separate DB name so the two never collide,
 // and a per-user storeName so each account restores only its own data.
@@ -39,6 +66,8 @@ export function createIDBPersister(userId: string) {
     // The whole cache is serialized on each write; 3s keeps that off the
     // hot path while the prefetcher is filling hundreds of entries.
     throttleTime: 3000,
+    serialize,
+    deserialize,
   });
   persisters.set(userId, persister);
   return persister;

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { permissionsDb } from "../../lib/permissionsDb";
 import { supabase } from "../../lib/supabaseClient";
 import type { DepartmentRow } from "../../types/permissions.types";
@@ -12,8 +12,9 @@ export interface DepartmentWithCount extends DepartmentRow {
 }
 
 /** Department list with a live member count from employees.department_id. */
-export function useDepartments() {
-  return useQuery<DepartmentWithCount[]>({
+// Exported for the background prefetcher (src/lib/prefetch).
+export const departmentsQueryOptions = () =>
+  queryOptions<DepartmentWithCount[]>({
     queryKey: DEPARTMENTS_KEY,
     queryFn: async () => {
       const { data: departments, error } = await permissionsDb
@@ -42,6 +43,9 @@ export function useDepartments() {
       }));
     },
   });
+
+export function useDepartments() {
+  return useQuery(departmentsQueryOptions());
 }
 
 export function useDepartment(id: string | undefined) {

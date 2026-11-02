@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { permissionsDb } from "../../lib/permissionsDb";
 import { supabase } from "../../lib/supabaseClient";
 import type { ProjectRoleHolderRow } from "../../types/permissions.types";
@@ -41,10 +41,9 @@ export interface ProjectRoleAdminRow {
   projects: RoleHolderProject[];
 }
 
-export function useProjectRolesAdmin() {
-  const queryClient = useQueryClient();
-
-  const query = useQuery({
+// Exported for the background prefetcher (src/lib/prefetch).
+export const projectRolesAdminQueryOptions = () =>
+  queryOptions({
     queryKey: ADMIN_KEY,
     queryFn: async (): Promise<ProjectRoleAdminRow[]> => {
       const [{ data: roles, error: rolesError }, { data: assignments, error: assignmentsError }, templateRoles] =
@@ -99,6 +98,11 @@ export function useProjectRolesAdmin() {
       });
     },
   });
+
+export function useProjectRolesAdmin() {
+  const queryClient = useQueryClient();
+
+  const query = useQuery(projectRolesAdminQueryOptions());
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ADMIN_KEY });

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { permissionsDb } from "../../lib/permissionsDb";
 import { supabase } from "../../lib/supabaseClient";
 import { TIERS } from "../../lib/queryClient";
@@ -84,6 +84,43 @@ export const myPermissionsKey = (userId: string | null, projectId?: string) => [
   projectId ?? "company",
 ];
 
+/**
+ * The query behind useMyPermissions, exported so the background
+ * prefetcher can read the same cached answer to decide what to warm.
+ *
+ * The cached value is a plain string[]; useMyPermissions turns it into a
+ * Set with a stable module-level `select`, so the Set is only rebuilt
+ * when the array actually changes.
+ */
+export const myPermissionsQueryOptions = (
+  userId: string | null,
+  projectId?: string,
+) =>
+  queryOptions<string[]>({
+    queryKey: myPermissionsKey(userId, projectId),
+    ...TIERS.E,
+    queryFn: async () => {
+      // Never cache an answer computed for the wrong caller. The id in
+      // the key comes from the stored session; if supabase-js could not
+      // attach that session (expired and offline, or signed out
+      // underneath us) the resolver would see auth.uid() = null and deny
+      // everything. Fail instead, so React Query retries and the
+      // previously cached answer stays on screen.
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!userId || sessionData.session?.user?.id !== userId) {
+        throw new Error("session not attached yet");
+      }
+      const { data, error } = await permissionsDb.rpc(
+        "my_effective_permissions",
+        projectId ? { p_project_id: projectId } : {},
+      );
+      if (error) throw error;
+      return ((data ?? []) as EffectivePermissionRow[])
+        .filter((row) => row.allowed)
+        .map((row) => row.permission_name);
+    },
+  });
+
 export interface MyPermissionsResult {
   /** Allowed permission names. Undefined until answered. */
   data: Set<string> | undefined;
@@ -104,35 +141,10 @@ export interface MyPermissionsResult {
 export function useMyPermissions(projectId?: string): MyPermissionsResult {
   const { userId, resolved } = useAuthUserId();
 
-  // The cached value is a plain string[] so it survives the JSON
-  // round-trip to disk (a Set serializes to {}). `select` turns it into
-  // a Set for callers; a stable module-level function means React Query
-  // only rebuilds the Set when the array actually changes.
-  const query = useQuery<string[], Error, Set<string>>({
-    queryKey: myPermissionsKey(userId, projectId),
+  const query = useQuery({
+    ...myPermissionsQueryOptions(userId, projectId),
     enabled: !!userId,
-    ...TIERS.E,
     select: toPermissionSet,
-    queryFn: async () => {
-      // Never cache an answer computed for the wrong caller. The id in
-      // the key comes from the stored session; if supabase-js could not
-      // attach that session (expired and offline, or signed out
-      // underneath us) the resolver would see auth.uid() = null and deny
-      // everything. Fail instead, so React Query retries and the
-      // previously cached answer stays on screen.
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (sessionData.session?.user?.id !== userId) {
-        throw new Error("session not attached yet");
-      }
-      const { data, error } = await permissionsDb.rpc(
-        "my_effective_permissions",
-        projectId ? { p_project_id: projectId } : {},
-      );
-      if (error) throw error;
-      return ((data ?? []) as EffectivePermissionRow[])
-        .filter((row) => row.allowed)
-        .map((row) => row.permission_name);
-    },
   });
 
   return {

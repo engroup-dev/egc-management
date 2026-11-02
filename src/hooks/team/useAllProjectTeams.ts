@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { permissionsDb } from "../../lib/permissionsDb";
 import { supabase } from "../../lib/supabaseClient";
 import {
@@ -42,8 +42,9 @@ export interface ProjectWithTeam {
   members: TeamMember[];
 }
 
-export function useAllProjectTeams() {
-  return useQuery<ProjectWithTeam[]>({
+// Exported for the background prefetcher (src/lib/prefetch).
+export const allProjectTeamsQueryOptions = () =>
+  queryOptions<ProjectWithTeam[]>({
     queryKey: ALL_PROJECT_TEAMS_KEY,
     queryFn: async () => {
       const [{ data: projects, error: projectsError }, { data: rows, error }] =
@@ -95,4 +96,7 @@ export function useAllProjectTeams() {
       }));
     },
   });
+
+export function useAllProjectTeams() {
+  return useQuery(allProjectTeamsQueryOptions());
 }

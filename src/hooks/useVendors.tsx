@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { Vendor } from "../types/global.type";
 import { PostgrestError } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabaseClient";
@@ -26,11 +26,11 @@ const fetchVendorsList = async (): Promise<VendorsWithSpecializations[]> => {
   return (data ?? []) as unknown as VendorsWithSpecializations[];
 };
 
-export const useVendorsQuery = () =>
-  useQuery({
-    queryKey: ["vendors"],
-    queryFn: fetchVendorsList,
-  });
+// Exported for the background prefetcher (src/lib/prefetch).
+export const vendorsQueryOptions = () =>
+  queryOptions({ queryKey: ["vendors"], queryFn: fetchVendorsList });
+
+export const useVendorsQuery = () => useQuery(vendorsQueryOptions());
 
 export function useVendors() {
   const { data = [], isPending: loading, error } = useVendorsQuery();

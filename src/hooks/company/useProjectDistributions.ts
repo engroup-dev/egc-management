@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { permissionsDb } from "../../lib/permissionsDb";
 import { supabase } from "../../lib/supabaseClient";
 
@@ -146,8 +146,9 @@ export interface DistributionProjectListItem extends ProjectShareSummary {
 }
 
 /** Every project with its three-part total, for the list page. */
-export function useDistributionProjects() {
-  return useQuery<DistributionProjectListItem[]>({
+// Exported for the background prefetcher (src/lib/prefetch).
+export const distributionProjectsQueryOptions = () =>
+  queryOptions<DistributionProjectListItem[]>({
     queryKey: DISTRIBUTION_PROJECTS_KEY,
     queryFn: async () => {
       const { data: projects, error } = await supabase
@@ -191,6 +192,9 @@ export function useDistributionProjects() {
       });
     },
   });
+
+export function useDistributionProjects() {
+  return useQuery(distributionProjectsQueryOptions());
 }
 
 export interface DistributionCandidate {

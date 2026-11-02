@@ -1,6 +1,7 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PostgrestError } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabaseClient";
+import { TIERS } from "../lib/queryClient";
 import { PayrollWithRelations } from "../types/extended.type";
 
 const PAYROLL_KEY = ["payroll"] as const;
@@ -20,17 +21,19 @@ async function fetchPayroll(): Promise<PayrollWithRelations[]> {
   return (payrollData ?? []) as PayrollWithRelations[];
 }
 
+// Exported for the background prefetcher (src/lib/prefetch).
+export const payrollQueryOptions = () =>
+  queryOptions({ queryKey: PAYROLL_KEY, queryFn: fetchPayroll, ...TIERS.C });
+
 export function usePayroll() {
   const queryClient = useQueryClient();
   const {
     data: payroll = [],
     isPending: loading,
+    isFetching,
     error,
     refetch,
-  } = useQuery({
-    queryKey: PAYROLL_KEY,
-    queryFn: fetchPayroll,
-  });
+  } = useQuery(payrollQueryOptions());
 
   const markAsPaid = async (
     payrollIds: string[],
@@ -82,6 +85,8 @@ export function usePayroll() {
   return {
     payroll,
     loading,
+    // Cached numbers on screen are being re-checked against the server.
+    refreshing: isFetching && !loading,
     error: (error as PostgrestError | null) ?? null,
     markAsPaid,
     refetch,

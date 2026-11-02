@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { permissionsDb } from "../../lib/permissionsDb";
 import { supabase } from "../../lib/supabaseClient";
 import { TIERS } from "../../lib/queryClient";
@@ -127,8 +127,9 @@ export function useProjectTeam(projectId: string | undefined) {
   });
 }
 
-export function useProjectRoles() {
-  return useQuery<ProjectRoleRow[]>({
+// Exported for the background prefetcher (src/lib/prefetch).
+export const projectRolesQueryOptions = () =>
+  queryOptions<ProjectRoleRow[]>({
     queryKey: PROJECT_ROLES_KEY,
     ...TIERS.A,
     queryFn: async () => {
@@ -140,6 +141,9 @@ export function useProjectRoles() {
       return data ?? [];
     },
   });
+
+export function useProjectRoles() {
+  return useQuery(projectRolesQueryOptions());
 }
 
 export interface AssignablePerson {
