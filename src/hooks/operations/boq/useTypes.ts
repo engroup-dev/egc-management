@@ -1,5 +1,6 @@
 import { PostgrestError } from "@supabase/supabase-js";
-import { useCallback, useEffect, useState } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Dispatch, SetStateAction, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import { computeNextSortOrder } from "./sortOrder";
 
@@ -36,43 +37,60 @@ export async function fetchTypesByName(
   return data ?? [];
 }
 
+export const boqTypesKey = (projectId: string) =>
+  ["boq", "types", projectId] as const;
+
+async function fetchTypes(projectId: string): Promise<BOQType[]> {
+  const { data, error } = await supabase
+    .schema("boq")
+    .from("types")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("sort_order", { ascending: true });
+
+  if (error) {
+    console.error("error fetching types", error);
+    throw error;
+  }
+  return data ?? [];
+}
+
+export const boqTypesQueryOptions = (projectId: string) =>
+  queryOptions({
+    queryKey: boqTypesKey(projectId),
+    queryFn: () => fetchTypes(projectId),
+    enabled: !!projectId,
+  });
+
 export function useTypes(projectId: string) {
-  const [types, setTypes] = useState<BOQType[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
+  const queryClient = useQueryClient();
+  const query = useQuery(boqTypesQueryOptions(projectId));
 
-  const fetchTypes = useCallback(async () => {
+  // Callers apply optimistic reorders through this, so it writes the cache.
+  const setTypes: Dispatch<SetStateAction<BOQType[]>> = (action) => {
+    queryClient.setQueryData<BOQType[]>(boqTypesKey(projectId), (prev) =>
+      typeof action === "function" ? action(prev ?? []) : action,
+    );
+  };
+
+  const refetch = async () => {
     if (!projectId) return;
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .schema("boq")
-        .from("types")
-        .select("*")
-        .eq("project_id", projectId)
-        .order("sort_order", { ascending: true });
+    await query.refetch();
+  };
 
-      if (error) {
-        console.error("error fetching types", error);
-        setError(error);
-      } else {
-        setTypes(data ?? []);
-      }
-    } catch (err) {
-      console.error("unexpected error fetching types", err);
-      setError(err as PostgrestError);
-    }
-    setLoading(false);
-  }, [projectId]);
-
-  useEffect(() => {
-    fetchTypes();
-  }, [fetchTypes]);
-
-  return { types, setTypes, loading, error, refetch: fetchTypes };
+  return {
+    types: query.data ?? [],
+    setTypes,
+    // isLoading, not isPending: a disabled query (no projectId) is pending
+    // forever, and the old hook reported false there.
+    loading: query.isLoading,
+    error: query.error as PostgrestError | null,
+    refetch,
+  };
 }
 
 export function useCreateType() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
 
@@ -102,6 +120,7 @@ export function useCreateType() {
       setError(error);
       return { data: null, error };
     }
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     return { data, error: null };
   }
 
@@ -109,6 +128,7 @@ export function useCreateType() {
 }
 
 export function useUpdateType() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
 
@@ -131,6 +151,7 @@ export function useUpdateType() {
       setError(error);
       return { error };
     }
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     return { error: null };
   }
 
@@ -138,6 +159,7 @@ export function useUpdateType() {
 }
 
 export function useDeleteType() {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
 
@@ -198,6 +220,7 @@ export function useDeleteType() {
       setError(error);
       return { error };
     }
+    queryClient.invalidateQueries({ queryKey: ["boq"] });
     return { error: null };
   }
 
