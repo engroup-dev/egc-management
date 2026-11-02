@@ -14,18 +14,21 @@ import {
 import GenericTable from "../../components/tables/table";
 import KpiCard from "../../components/ui/KpiCard";
 import LoadingPage from "../../components/ui/LoadingPage";
+import RefreshingBadge from "../../components/ui/RefreshingBadge";
 
 const ProjectsCountersPage = () => {
   const { projects, loading: projectsLoading } = useProjects();
   const {
     rows,
     loading: rowsLoading,
+    refreshing: rowsRefreshing,
     error,
     refetch,
   } = useOpenProjectNegativePeriods();
   const {
     rows: accountRows,
     loading: accountRowsLoading,
+    refreshing: accountRowsRefreshing,
     error: accountRowsError,
     refetch: refetchAccountRows,
   } = useOpenAccountNegativePeriods();
@@ -88,7 +91,10 @@ const ProjectsCountersPage = () => {
   return (
     <div className="p-6 space-y-4">
       <div>
-        <h1 className="text-xl font-bold text-gray-900">عدادات المشاريع</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-bold text-gray-900">عدادات المشاريع</h1>
+          <RefreshingBadge show={rowsRefreshing || accountRowsRefreshing} />
+        </div>
         <p className="text-sm text-gray-500 mt-0.5">
           متابعة فترات الرصيد السالب لكل مشروع
         </p>

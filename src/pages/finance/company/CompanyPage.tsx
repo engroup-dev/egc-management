@@ -2,11 +2,13 @@ import ExpenseTab from "../../../components/finance/company/ExpenseTab";
 // import IncomeTab from "../../../components/finance/company/IncomeTab";
 import ErrorPage from "../../../components/ui/errorPage";
 import LoadingPage from "../../../components/ui/LoadingPage";
+import RefreshingBadge from "../../../components/ui/RefreshingBadge";
 import Tabs from "../../../components/ui/Tabs";
 import { useComapnyFinance } from "../../../hooks/finance/useComapanyFinance";
 
 const CompanyPage = () => {
-  const { error, expenses, loading, addExpense } = useComapnyFinance();
+  const { error, expenses, loading, addExpense, refreshing } =
+    useComapnyFinance();
   const tabs = [
     {
       id: "expenses",
@@ -30,6 +32,7 @@ const CompanyPage = () => {
   }
   return (
     <div>
+      <RefreshingBadge show={refreshing} />
       <Tabs tabs={tabs} defaultTab="expenses" />
     </div>
   );

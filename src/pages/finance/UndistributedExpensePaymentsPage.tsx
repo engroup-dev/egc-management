@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import LoadingPage from "../../components/ui/LoadingPage";
+import RefreshingBadge from "../../components/ui/RefreshingBadge";
 import ErrorPage from "../../components/ui/errorPage";
 import Button from "../../components/ui/Button";
 import ProjectExpensePaymentsGroup from "../../components/finance/undistributed/ProjectExpensePaymentsGroup";
@@ -49,7 +50,8 @@ function KpiCard({
 }
 
 const UndistributedExpensePaymentsPage = () => {
-  const { rows, loading, error } = useUndistributedExpensePayments();
+  const { rows, loading, error, refreshing } =
+    useUndistributedExpensePayments();
   const {
     generate: generatePrint,
     loading: printing,
@@ -168,7 +170,7 @@ const UndistributedExpensePaymentsPage = () => {
     <div className="p-4 space-y-4">
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">
-          مدفوعات قيد التوزيع
+          مدفوعات قيد التوزيع <RefreshingBadge show={refreshing} />
         </h1>
         <p className="text-sm text-gray-500 mt-1">
           سجل مدفوعات مصاريف المشاريع التي لم يتم توزيع نسبتها بعد

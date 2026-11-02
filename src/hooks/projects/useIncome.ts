@@ -1,42 +1,50 @@
 import { PostgrestError } from "@supabase/supabase-js";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
+import { TIERS } from "../../lib/queryClient";
 import { useAuth } from "../useAuth";
 import { ProjectIncomeFormValues } from "../../types/schema/ProjectBook.schema";
 import { supabase } from "../../lib/supabaseClient";
 import { ProjectWithIncome } from "../../types/projects.type";
 
-export function useIncome(projectId: string) {
-  const [project, setProject] = useState<ProjectWithIncome | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
-  const { user } = useAuth();
+export const projectIncomeKey = (projectId: string) =>
+  ["projects", "income", projectId] as const;
 
-  useEffect(() => {
-    async function fetchProject() {
-      setLoading(true);
+export const projectIncomeQueryOptions = (projectId: string) =>
+  queryOptions({
+    queryKey: projectIncomeKey(projectId),
+    queryFn: async (): Promise<ProjectWithIncome> => {
       const { data, error } = await supabase
         .from("projects")
         .select("*, project_incomes(*)")
         .eq("id", projectId)
         .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!projectId,
+    ...TIERS.C,
+  });
 
-      if (error) {
-        console.error("error fetching project", error);
-        setError(error);
-      } else {
-        setProject(data);
-      }
+export function useIncome(projectId: string) {
+  const queryClient = useQueryClient();
+  const query = useQuery(projectIncomeQueryOptions(projectId));
+  const [mutating, setMutating] = useState(false);
+  const [mutationError, setMutationError] = useState<PostgrestError | null>(
+    null,
+  );
+  const { user } = useAuth();
 
-      setLoading(false);
-    }
-
-    fetchProject();
-  }, [projectId]);
+  // Balances and the book view moved server-side as well as the row list.
+  const refreshProjectMoney = () => {
+    void queryClient.invalidateQueries({ queryKey: ["projects"] });
+    void queryClient.invalidateQueries({ queryKey: ["projects-list"] });
+  };
 
   const addIncome = async (incomeData: ProjectIncomeFormValues) => {
     try {
-      setLoading(true);
-      setError(null);
+      setMutating(true);
+      setMutationError(null);
 
       if (!user?.id) {
         throw new Error("User not authenticated");
@@ -82,14 +90,17 @@ export function useIncome(projectId: string) {
 
       // Update local state with new income
       if (data) {
-        setProject((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            project_incomes: [...(prev.project_incomes || []), data],
-            income_counter: (prev.income_counter || 0) + 1,
-          };
-        });
+        queryClient.setQueryData<ProjectWithIncome>(
+          projectIncomeKey(projectId),
+          (prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              project_incomes: [...(prev.project_incomes || []), data],
+              income_counter: (prev.income_counter || 0) + 1,
+            };
+          },
+        );
       }
 
       // update project income counter
@@ -103,7 +114,7 @@ export function useIncome(projectId: string) {
 
       if (counterError) {
         console.error("error updating project income counter", counterError);
-        setError(counterError);
+        setMutationError(counterError);
       }
 
       //update the account balance and total transactions
@@ -168,17 +179,18 @@ export function useIncome(projectId: string) {
       return { data, error: null };
     } catch (err) {
       const error = err as PostgrestError;
-      setError(error);
+      setMutationError(error);
       return { data: null, error };
     } finally {
-      setLoading(false);
+      setMutating(false);
+      refreshProjectMoney();
     }
   };
 
   const deleteIncome = async (projectId: string, incomeId: string) => {
     try {
-      setLoading(true);
-      setError(null);
+      setMutating(true);
+      setMutationError(null);
 
       if (!user?.id) throw new Error("User not authenticated");
       if (!projectId) throw new Error("projectId is required");
@@ -221,15 +233,18 @@ export function useIncome(projectId: string) {
       }
 
       // 3) update local state
-      setProject((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          project_incomes: (prev.project_incomes || []).filter(
-            (i) => i.id !== incomeId,
-          ),
-        };
-      });
+      queryClient.setQueryData<ProjectWithIncome>(
+        projectIncomeKey(projectId),
+        (prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            project_incomes: (prev.project_incomes || []).filter(
+              (i) => i.id !== incomeId,
+            ),
+          };
+        },
+      );
 
       // 4) update account balance & total_transactions (subtract income)
       const { data: accountData, error: accountError } = await supabase
@@ -301,12 +316,19 @@ export function useIncome(projectId: string) {
     } catch (err) {
       console.error("Error in deleteIncome", err);
       const error = err as PostgrestError;
-      setError(error);
+      setMutationError(error);
       return { data: null, error };
     } finally {
-      setLoading(false);
+      setMutating(false);
+      refreshProjectMoney();
     }
   };
 
-  return { project, loading, error, addIncome, deleteIncome };
+  return {
+    project: query.data ?? null,
+    loading: query.isPending || mutating,
+    error: mutationError ?? (query.error as PostgrestError | null),
+    addIncome,
+    deleteIncome,
+  };
 }

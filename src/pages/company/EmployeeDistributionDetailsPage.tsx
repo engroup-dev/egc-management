@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useDistributionHistory } from "../../hooks/projects/useDistributionHistory";
 import { formatCurrency } from "../../utils/helpper";
@@ -35,34 +35,7 @@ const EmployeeDistributionDetailsPage = () => {
 
   const { periods, loading, error } = useDistributionHistory();
 
-  const [employee, setEmployee] = useState<{
-    firstName: string;
-    lastName: string | null;
-    specialization: string | null;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!employeeId) return;
-    supabase
-      .from("employees")
-      .select("first_name, last_name, employee_specialities(speciality:specialities(name))")
-      .eq("id", employeeId)
-      .single()
-      .then(({ data }) => {
-        if (data) {
-          setEmployee({
-            firstName: data.first_name,
-            lastName: data.last_name,
-            specialization:
-              (
-                data.employee_specialities as
-                  | { speciality: { name: string } | null }[]
-                  | null
-              )?.[0]?.speciality?.name ?? null,
-          });
-        }
-      });
-  }, [employeeId]);
+  const { data: employee = null } = useDistributionEmployee(employeeId);
 
   if (loading) return <LoadingPage label="جاري تحميل بيانات الموظف" />;
   if (error)
@@ -249,3 +222,35 @@ const EmployeeDistributionDetailsPage = () => {
 };
 
 export default EmployeeDistributionDetailsPage;
+
+// ─── Header data ──────────────────────────────────────────────────────────────
+
+const distributionEmployeeQueryOptions = (employeeId: string) =>
+  queryOptions({
+    queryKey: ["company", "distribution-employee", employeeId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("employees")
+        .select(
+          "first_name, last_name, employee_specialities(speciality:specialities(name))",
+        )
+        .eq("id", employeeId)
+        .single();
+      if (error) throw error;
+      return {
+        firstName: data.first_name,
+        lastName: data.last_name,
+        specialization:
+          (
+            data.employee_specialities as
+              | { speciality: { name: string } | null }[]
+              | null
+          )?.[0]?.speciality?.name ?? null,
+      };
+    },
+    enabled: !!employeeId,
+  });
+
+function useDistributionEmployee(employeeId: string | undefined) {
+  return useQuery(distributionEmployeeQueryOptions(employeeId ?? ""));
+}

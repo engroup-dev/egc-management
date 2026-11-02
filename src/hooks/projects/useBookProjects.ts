@@ -1,4 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
+import {
+  QueryClient,
+  queryOptions,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { TIERS } from "../../lib/queryClient";
 import { ProjectWithDetailsForBook } from "../../types/projects.type";
 import { supabase } from "../../lib/supabaseClient";
 import {
@@ -26,103 +33,112 @@ type ExpenseWithJoins = ProjectExpenses & {
   contractors: { first_name: string | null; last_name: string | null } | null;
 };
 
+export const bookProjectKey = (projectId: string) =>
+  ["projects", "book", projectId] as const;
+
+async function fetchBookProject(
+  projectId: string,
+): Promise<ProjectWithDetailsForBook> {
+  // 1. Fetch project (WITHOUT expenses)
+  const { data: projectData, error: projectError } = await supabase
+    .from("projects")
+    .select(
+      `
+  *,
+  clients(*),
+  project_incomes(*),
+  project_balances(*),
+  project_refund(*),
+  project_percentage_logs(*),
+  accounts(*),
+  project_maps(*)
+`,
+    )
+    .eq("id", projectId)
+    .single();
+
+  if (projectError) throw projectError;
+
+  // 2. Fetch ALL expenses in batches
+  const pageSize = 1000;
+  let from = 0;
+  const expenses: ExpenseWithJoins[] = [];
+
+  for (;;) {
+    const { data: batch, error: expenseError } = await supabase
+      .from("project_expenses")
+      .select(
+        `
+    *,
+    vendors(vendor_name),
+    contractors(first_name,last_name)
+  `,
+      )
+      .eq("project_id", projectId)
+      .range(from, from + pageSize - 1)
+      .order("created_at", { ascending: false });
+
+    if (expenseError) throw expenseError;
+
+    if (!batch?.length) break;
+
+    expenses.push(...batch);
+
+    if (batch.length < pageSize) break;
+
+    from += pageSize;
+  }
+
+  // 3. Transform expenses
+  const transformedExpenses = expenses.map((expense) => ({
+    ...expense,
+    vendor_name: expense.vendors?.vendor_name ?? undefined,
+    contract_name:
+      [expense.contractors?.first_name, expense.contractors?.last_name]
+        .filter(Boolean)
+        .join(" ") || undefined,
+  }));
+
+  // 4. Merge result
+  const projectWithNames: ProjectWithDetailsForBook = {
+    ...projectData,
+    client: projectData.clients,
+    project_expenses: transformedExpenses,
+  };
+
+  return projectWithNames;
+}
+
+// Exported so the background prefetcher can warm a project's book.
+export const bookProjectQueryOptions = (projectId: string) =>
+  queryOptions({
+    queryKey: bookProjectKey(projectId),
+    queryFn: () => fetchBookProject(projectId),
+    enabled: !!projectId,
+    ...TIERS.C,
+  });
+
+// Money writes also move balances, counters and list totals server-side
+// (map payments hit company_account too), so refetch every cached
+// project view, the project list and the company accounts.
+function refreshProjectMoney(queryClient: QueryClient) {
+  void queryClient.invalidateQueries({ queryKey: ["projects"] });
+  void queryClient.invalidateQueries({ queryKey: ["projects-list"] });
+  void queryClient.invalidateQueries({ queryKey: ["company"] });
+}
+
 export function useBookProject(projectId: string) {
-  const [project, setProject] = useState<ProjectWithDetailsForBook | null>(
-    null,
-  );
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<Error | null>(null);
+  const queryClient = useQueryClient();
+  const query = useQuery(bookProjectQueryOptions(projectId));
+  const project = query.data ?? null;
+  const [mutating, setMutating] = useState(false);
+  const [mutationError, setMutationError] = useState<Error | null>(null);
   const { user } = useAuth();
-
-  useEffect(() => {
-    async function fetchProject() {
-      try {
-        setLoading(true);
-
-        // 1. Fetch project (WITHOUT expenses)
-        const { data: projectData, error: projectError } = await supabase
-          .from("projects")
-          .select(
-            `
-        *,
-        clients(*),
-        project_incomes(*),
-        project_balances(*),
-        project_refund(*),
-        project_percentage_logs(*),
-        accounts(*),
-        project_maps(*)
-      `,
-          )
-          .eq("id", projectId)
-          .single();
-
-        if (projectError) throw projectError;
-
-        // 2. Fetch ALL expenses in batches
-        const pageSize = 1000;
-        let from = 0;
-        const expenses: ExpenseWithJoins[] = [];
-
-        for (;;) {
-          const { data: batch, error: expenseError } = await supabase
-            .from("project_expenses")
-            .select(
-              `
-          *,
-          vendors(vendor_name),
-          contractors(first_name,last_name)
-        `,
-            )
-            .eq("project_id", projectId)
-            .range(from, from + pageSize - 1)
-            .order("created_at", { ascending: false });
-
-          if (expenseError) throw expenseError;
-
-          if (!batch?.length) break;
-
-          expenses.push(...batch);
-
-          if (batch.length < pageSize) break;
-
-          from += pageSize;
-        }
-
-        // 3. Transform expenses
-        const transformedExpenses = expenses.map((expense) => ({
-          ...expense,
-          vendor_name: expense.vendors?.vendor_name ?? undefined,
-          contract_name:
-            [expense.contractors?.first_name, expense.contractors?.last_name]
-              .filter(Boolean)
-              .join(" ") || undefined,
-        }));
-
-        // 4. Merge result
-        const projectWithNames: ProjectWithDetailsForBook = {
-          ...projectData,
-          client: projectData.clients,
-          project_expenses: transformedExpenses,
-        };
-
-        setProject(projectWithNames);
-        setError(null);
-      } catch (err) {
-        console.error("error fetching project", err);
-        setError(err as Error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchProject();
-  }, [projectId]);
 
   const addExpense = async (expenseData: ProjectExpenseFormValues) => {
     try {
-      setLoading(true);
-      setError(null);
+      setMutating(true);
+      setMutationError(null);
 
       if (!user?.id) throw new Error("User not authenticated");
 
@@ -308,22 +324,26 @@ export function useBookProject(projectId: string) {
         .eq("id", expense.id);
 
       // update local state
-      setProject((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          project_expenses: [expense, ...(prev.project_expenses ?? [])],
-        };
-      });
+      queryClient.setQueryData<ProjectWithDetailsForBook>(
+        bookProjectKey(projectId),
+        (prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            project_expenses: [expense, ...(prev.project_expenses ?? [])],
+          };
+        },
+      );
 
       return { data: expense, error: null };
     } catch (err) {
       console.error("Error in addExpense", err);
       const error = err as PostgrestError;
-      setError(error);
+      setMutationError(error);
       return { data: null, error };
     } finally {
-      setLoading(false);
+      setMutating(false);
+      refreshProjectMoney(queryClient);
     }
   };
 
@@ -331,8 +351,8 @@ export function useBookProject(projectId: string) {
     expenseData: ProjectExpensePercentageFormValues,
   ) => {
     try {
-      setLoading(true);
-      setError(null);
+      setMutating(true);
+      setMutationError(null);
 
       if (!user?.id) throw new Error("User not authenticated");
 
@@ -525,28 +545,32 @@ export function useBookProject(projectId: string) {
         .eq("id", expense.id);
 
       // update local state
-      setProject((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          project_expenses: [expense, ...(prev.project_expenses ?? [])],
-        };
-      });
+      queryClient.setQueryData<ProjectWithDetailsForBook>(
+        bookProjectKey(projectId),
+        (prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            project_expenses: [expense, ...(prev.project_expenses ?? [])],
+          };
+        },
+      );
 
       return { data: expense, error: null };
     } catch (err) {
       const error = err as PostgrestError;
-      setError(error);
+      setMutationError(error);
       return { data: null, error };
     } finally {
-      setLoading(false);
+      setMutating(false);
+      refreshProjectMoney(queryClient);
     }
   };
 
   const addIncome = async (incomeData: ProjectIncomeFormValues) => {
     try {
-      setLoading(true);
-      setError(null);
+      setMutating(true);
+      setMutationError(null);
 
       if (!user?.id) {
         throw new Error("User not authenticated");
@@ -592,14 +616,17 @@ export function useBookProject(projectId: string) {
 
       // Update local state with new income
       if (data) {
-        setProject((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            project_incomes: [...(prev.project_incomes || []), data],
-            income_counter: (prev.income_counter || 0) + 1,
-          };
-        });
+        queryClient.setQueryData<ProjectWithDetailsForBook>(
+          bookProjectKey(projectId),
+          (prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              project_incomes: [...(prev.project_incomes || []), data],
+              income_counter: (prev.income_counter || 0) + 1,
+            };
+          },
+        );
       }
 
       // update project income counter
@@ -613,7 +640,7 @@ export function useBookProject(projectId: string) {
 
       if (counterError) {
         console.error("error updating project income counter", counterError);
-        setError(counterError);
+        setMutationError(counterError);
       }
 
       //update the account balance and total transactions
@@ -678,10 +705,11 @@ export function useBookProject(projectId: string) {
       return { data, error: null };
     } catch (err) {
       const error = err as PostgrestError;
-      setError(error);
+      setMutationError(error);
       return { data: null, error };
     } finally {
-      setLoading(false);
+      setMutating(false);
+      refreshProjectMoney(queryClient);
     }
   };
 
@@ -876,13 +904,15 @@ export function useBookProject(projectId: string) {
       };
     }
 
+    refreshProjectMoney(queryClient);
     return { success: true };
   };
 
   return {
     project,
-    loading,
-    error,
+    loading: query.isPending || mutating,
+    refreshing: query.isFetching && !query.isPending,
+    error: mutationError ?? (query.error as Error | null),
     addExpense,
     addIncome,
     addRefund,
@@ -894,6 +924,7 @@ export function useProjectExpenseActions() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PostgrestError | null>(null);
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   const updateExpense = async (payload: {
     expense_id: string;
@@ -1075,6 +1106,7 @@ export function useProjectExpenseActions() {
       }
     }
 
+    refreshProjectMoney(queryClient);
     return { success: true };
   };
 
@@ -1289,6 +1321,7 @@ export function useProjectExpenseActions() {
 
       if (softDeleteError) throw softDeleteError;
 
+      refreshProjectMoney(queryClient);
       return { success: true };
     } catch (err) {
       console.error("deleteExpense error", err);
@@ -1306,6 +1339,7 @@ export function useMaps(projectId: string) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<{ message: string } | null>(null);
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   const fetchMaps = useCallback(async () => {
     setLoading(true);
@@ -1489,6 +1523,7 @@ export function useMaps(projectId: string) {
         }
       }
 
+      refreshProjectMoney(queryClient);
       return { data: expense, error: null };
     } catch (err) {
       console.error("Error in addExpense", err);
@@ -1634,6 +1669,7 @@ export function useMaps(projectId: string) {
 
       if (deleteError) throw deleteError;
 
+      refreshProjectMoney(queryClient);
       return { success: true, error: null };
     } catch (err) {
       console.error("Error in deleteMap", err);

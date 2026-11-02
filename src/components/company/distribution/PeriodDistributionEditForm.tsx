@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -38,6 +39,7 @@ interface Props {
 }
 
 const PeriodDistributionEditForm = ({ periods, onSave }: Props) => {
+  const queryClient = useQueryClient();
   const [showPicker, setShowPicker] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -156,6 +158,11 @@ const PeriodDistributionEditForm = ({ periods, onSave }: Props) => {
       window.alert(`حدث خطأ: ${result.error}`);
       return;
     }
+    // Periods and company_account changed: refresh every money screen
+    // that reads them, not just the history list the caller refetches.
+    void queryClient.invalidateQueries({ queryKey: ["company"] });
+    void queryClient.invalidateQueries({ queryKey: ["projects"] });
+    void queryClient.invalidateQueries({ queryKey: ["projects-list"] });
     onSave?.();
   };
 

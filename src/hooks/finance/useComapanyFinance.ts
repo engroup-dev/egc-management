@@ -1,7 +1,8 @@
 import { PostgrestError } from "@supabase/supabase-js";
-import { useEffect, useState } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CompanyExpense } from "../../types/global.type";
 import { supabase } from "../../lib/supabaseClient";
+import { TIERS } from "../../lib/queryClient";
 import {
   CompanyExpenseFormValues,
   CompanyExpensePaymentsValues,
@@ -9,30 +10,29 @@ import {
 import { useAuth } from "../useAuth";
 import { CompanyPaymentsWithUser } from "../../types/extended.type";
 
+export const companyExpensesKey = ["finance", "company-expenses"] as const;
+
+async function fetchCompanyExpenses(): Promise<CompanyExpense[]> {
+  const { data, error } = await supabase.from("company_expense").select("*");
+  if (error) {
+    console.error("error fetching contractors", error);
+    throw error;
+  }
+  return data ?? [];
+}
+
+// Exported so the background prefetcher can warm this screen.
+export const companyExpensesQueryOptions = () =>
+  queryOptions({
+    queryKey: companyExpensesKey,
+    queryFn: fetchCompanyExpenses,
+    ...TIERS.C,
+  });
+
 export function useComapnyFinance() {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
-  const [expenses, setExpense] = useState<CompanyExpense[] | null>([]);
+  const queryClient = useQueryClient();
+  const query = useQuery(companyExpensesQueryOptions());
   const { user } = useAuth(); // ✅ call hook here at the top
-
-  useEffect(() => {
-    async function fetchExpenses() {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("company_expense")
-        .select("*");
-
-      if (error) {
-        console.error("error fetching contractors", error);
-        setError(error);
-      } else {
-        setExpense(data ?? []);
-      }
-
-      setLoading(false);
-    }
-    fetchExpenses();
-  }, []);
 
   const addExpense = async (form: CompanyExpenseFormValues) => {
     if (!user) {
@@ -126,56 +126,66 @@ export function useComapnyFinance() {
     }
 
     // **Update local state so UI reflects the new expense**
-    setExpense((prev) => (prev ? [...prev, expense] : [expense]));
+    queryClient.setQueryData<CompanyExpense[]>(companyExpensesKey, (prev) =>
+      prev ? [...prev, expense] : [expense],
+    );
+    void queryClient.invalidateQueries({ queryKey: ["finance"] });
+    // company_account balance is shown on the company dashboard too.
+    void queryClient.invalidateQueries({ queryKey: ["company"] });
 
     return { success: true };
   };
 
-  return { loading, error, expenses, addExpense };
+  return {
+    loading: query.isPending,
+    error: query.error as PostgrestError | null,
+    expenses: query.data ?? [],
+    refreshing: query.isFetching && !query.isPending,
+    addExpense,
+  };
 }
 
-export function useCompanyExpense(expenseId: string) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
-  const [expense, setExpense] = useState<CompanyExpense | null>(null);
-  const [payments, setPayments] = useState<CompanyPaymentsWithUser[]>([]);
-  const { user } = useAuth();
+export const companyExpenseKey = (expenseId: string) =>
+  ["finance", "company-expense", expenseId] as const;
 
-  async function fetchExpense() {
-    setLoading(true);
+async function fetchCompanyExpense(expenseId: string): Promise<{
+  expense: CompanyExpense;
+  payments: CompanyPaymentsWithUser[];
+}> {
+  const { data, error: expenseError } = await supabase
+    .from("company_expense")
+    .select("*")
+    .eq("id", expenseId)
+    .single();
 
-    const { data, error: expenseError } = await supabase
-      .from("company_expense")
-      .select("*")
-      .eq("id", expenseId)
-      .single();
-
-    if (expenseError) {
-      console.error("error fetching expense:", expenseError);
-      setError(expenseError);
-      setLoading(false);
-      return;
-    }
-
-    setExpense(data);
-
-    const { data: paymentsData, error: paymentsError } = await supabase
-      .from("company_expense_payments")
-      .select("*, users(*)")
-      .eq("expense_id", expenseId);
-
-    if (paymentsError) {
-      setError(paymentsError);
-    } else {
-      setPayments((paymentsData ?? []).filter(Boolean));
-    }
-
-    setLoading(false);
+  if (expenseError) {
+    console.error("error fetching expense:", expenseError);
+    throw expenseError;
   }
 
-  useEffect(() => {
-    fetchExpense();
-  }, [expenseId]);
+  const { data: paymentsData, error: paymentsError } = await supabase
+    .from("company_expense_payments")
+    .select("*, users(*)")
+    .eq("expense_id", expenseId);
+
+  if (paymentsError) throw paymentsError;
+
+  return { expense: data, payments: (paymentsData ?? []).filter(Boolean) };
+}
+
+export const companyExpenseQueryOptions = (expenseId: string) =>
+  queryOptions({
+    queryKey: companyExpenseKey(expenseId),
+    queryFn: () => fetchCompanyExpense(expenseId),
+    enabled: !!expenseId,
+    ...TIERS.C,
+  });
+
+export function useCompanyExpense(expenseId: string) {
+  const queryClient = useQueryClient();
+  const query = useQuery(companyExpenseQueryOptions(expenseId));
+  const expense = query.data?.expense ?? null;
+  const { user } = useAuth();
 
   const addPayments = async (
     form: CompanyExpensePaymentsValues,
@@ -244,7 +254,10 @@ export function useCompanyExpense(expenseId: string) {
     }
 
     // 6. Refresh local state
-    await fetchExpense();
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["finance"] }),
+      queryClient.invalidateQueries({ queryKey: ["company"] }),
+    ]);
 
     return { success: true };
   };
@@ -260,9 +273,19 @@ export function useCompanyExpense(expenseId: string) {
       return { success: false, message: "فشل في حذف الدفعة" };
     }
 
-    await fetchExpense();
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["finance"] }),
+      queryClient.invalidateQueries({ queryKey: ["company"] }),
+    ]);
     return { success: true };
   };
 
-  return { payments, expense, loading, error, addPayments, deletePayment };
+  return {
+    payments: query.data?.payments ?? [],
+    expense,
+    loading: !!expenseId && query.isPending,
+    error: query.error as PostgrestError | null,
+    addPayments,
+    deletePayment,
+  };
 }

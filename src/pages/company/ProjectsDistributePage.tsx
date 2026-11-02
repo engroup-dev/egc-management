@@ -14,6 +14,7 @@ import StepOneProjectDistribute from "../../components/company/SetpOneProjectDis
 import SharesPdfButton from "../../components/pdf-buttons/SharesPdfButton";
 import Button from "../../components/ui/Button";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import RefreshingBadge from "../../components/ui/RefreshingBadge";
 
 // ─── Progress Checklist Overlay ───────────────────────────────────────────────
 
@@ -128,7 +129,7 @@ const ProjectsDistributePage = () => {
   const [invalidProjectIds, setInvalidProjectIds] = useState<string[]>([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const { projects, loading, error, submitDistribution, refetch } =
+  const { projects, loading, refreshing, error, submitDistribution, refetch } =
     useProjectsDistribute();
   const steps = useMemo(
     () => [
@@ -263,7 +264,9 @@ const ProjectsDistributePage = () => {
   // ── Normal wizard ─────────────────────────────────────────────────────────
   return (
     <div className="p-4">
-      <h1 className="text-center text-2xl font-bold mb-2">توزيع المشاريع</h1>
+      <h1 className="text-center text-2xl font-bold mb-2">
+        توزيع المشاريع <RefreshingBadge show={refreshing} />
+      </h1>
 
       <StepsHeader setStep={setStep} steps={steps} current={step} />
 
@@ -324,7 +327,9 @@ const ProjectsDistributePage = () => {
             <Button
               variant="success"
               size="md"
-              disabled={isSubmitting}
+              // Never submit shares from the cached list while it is
+              // still being re-checked against the server.
+              disabled={isSubmitting || refreshing}
               loading={isSubmitting}
               onClick={() => setConfirmOpen(true)} // ← open dialog instead of submitting directly
             >

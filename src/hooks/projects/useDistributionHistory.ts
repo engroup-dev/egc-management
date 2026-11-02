@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabaseClient";
+import { TIERS } from "../../lib/queryClient";
 import { PostgrestError } from "@supabase/supabase-js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -42,70 +43,72 @@ export interface DistributionPeriod {
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
+// Periods are company payouts, so they live under the "company" head with
+// the batches built from the same table.
+export const distributionHistoryKey = [
+  "company",
+  "distribution-history",
+] as const;
+
+async function fetchDistributionHistory(): Promise<DistributionPeriod[]> {
+  const { data, error } = await supabase
+    .from("project_percentage_periods")
+    .select(
+      `*,
+       project:projects(id, name, serial_number),
+       items:project_percentage_period_items(
+         id, item_type, user_id, percentage,
+         cash_amount, bank_amount, total, note
+       )`,
+    )
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+
+  // Enrich employee names from employees table
+  const employeeIds = new Set<string>();
+  (data ?? []).forEach((p: DistributionPeriod) =>
+    p.items.forEach((i) => {
+      if (i.item_type === "employee" && i.user_id) employeeIds.add(i.user_id);
+    }),
+  );
+
+  const nameMap: Record<string, string> = {};
+  if (employeeIds.size > 0) {
+    const { data: emps } = await supabase
+      .from("employees")
+      .select("id, first_name, last_name")
+      .in("id", Array.from(employeeIds));
+
+    (emps ?? []).forEach(
+      (e: { id: string; first_name: string; last_name: string | null }) => {
+        nameMap[e.id] = `${e.first_name} ${e.last_name ?? ""}`.trim();
+      },
+    );
+  }
+
+  const enriched = (data ?? []).map((p: DistributionPeriod) => ({
+    ...p,
+    items: p.items.map((i) => ({
+      ...i,
+      employee_name: i.user_id ? nameMap[i.user_id] : undefined,
+    })),
+  }));
+
+  return enriched as DistributionPeriod[];
+}
+
+// Exported so the background prefetcher can warm this screen.
+export const distributionHistoryQueryOptions = () =>
+  queryOptions({
+    queryKey: distributionHistoryKey,
+    queryFn: fetchDistributionHistory,
+    ...TIERS.C,
+  });
+
 export function useDistributionHistory() {
-  const [periods, setPeriods] = useState<DistributionPeriod[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
-
-  useEffect(() => {
-    fetchHistory();
-  }, []);
-
-  const fetchHistory = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { data, error } = await supabase
-        .from("project_percentage_periods")
-        .select(
-          `*,
-           project:projects(id, name, serial_number),
-           items:project_percentage_period_items(
-             id, item_type, user_id, percentage,
-             cash_amount, bank_amount, total, note
-           )`,
-        )
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-
-      // Enrich employee names from employees table
-      const employeeIds = new Set<string>();
-      (data ?? []).forEach((p: DistributionPeriod) =>
-        p.items.forEach((i) => {
-          if (i.item_type === "employee" && i.user_id) employeeIds.add(i.user_id);
-        }),
-      );
-
-      const nameMap: Record<string, string> = {};
-      if (employeeIds.size > 0) {
-        const { data: emps } = await supabase
-          .from("employees")
-          .select("id, first_name, last_name")
-          .in("id", Array.from(employeeIds));
-
-        (emps ?? []).forEach(
-          (e: { id: string; first_name: string; last_name: string | null }) => {
-            nameMap[e.id] = `${e.first_name} ${e.last_name ?? ""}`.trim();
-          },
-        );
-      }
-
-      const enriched = (data ?? []).map((p: DistributionPeriod) => ({
-        ...p,
-        items: p.items.map((i) => ({
-          ...i,
-          employee_name: i.user_id ? nameMap[i.user_id] : undefined,
-        })),
-      }));
-
-      setPeriods(enriched as DistributionPeriod[]);
-    } catch (err) {
-      setError(err as PostgrestError);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const queryClient = useQueryClient();
+  const query = useQuery(distributionHistoryQueryOptions());
 
   /**
    * Hard reversal — fully undoes all balance changes for a period.
@@ -286,8 +289,13 @@ export function useDistributionHistory() {
 
       if (periodUpdateError) throw periodUpdateError;
 
-      // Refresh local state
-      await fetchHistory();
+      // A reversal moves company, employee and project balances, so
+      // refresh every view of them, not just this list.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["company"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects-list"] }),
+      ]);
 
       return { success: true };
     } catch (err: unknown) {
@@ -299,10 +307,12 @@ export function useDistributionHistory() {
   };
 
   return {
-    periods,
-    loading,
-    error,
-    refetch: fetchHistory,
+    periods: query.data ?? null,
+    loading: query.isPending,
+    error: query.error as PostgrestError | null,
+    refetch: async () => {
+      await query.refetch();
+    },
     reverseDistribution,
   };
 }

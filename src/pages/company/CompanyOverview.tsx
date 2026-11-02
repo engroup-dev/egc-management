@@ -3,9 +3,10 @@ import { useCompanyFinance } from "../../hooks/company/useCompanyFinance";
 import { formatCurrency } from "../../utils/helpper";
 import LoadingPage from "../../components/ui/LoadingPage";
 import ErrorPage from "../../components/ui/errorPage";
+import RefreshingBadge from "../../components/ui/RefreshingBadge";
 
 const CompanyOverview = () => {
-  const { account, error, loading } = useCompanyFinance();
+  const { account, error, loading, refreshing } = useCompanyFinance();
 
   // Filter for accounts
   const mainAccount = account?.filter((acc) => acc.type === "main") || [];
@@ -32,6 +33,7 @@ const CompanyOverview = () => {
 
   return (
     <div className="p-4">
+      <RefreshingBadge show={refreshing} />
       <OverviewStatus
         stats={[
           {

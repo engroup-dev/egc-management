@@ -3,6 +3,7 @@ import Tabs from "../../../components/ui/Tabs";
 import GenericTable from "../../../components/tables/table";
 import ErrorPage from "../../../components/ui/errorPage";
 import LoadingPage from "../../../components/ui/LoadingPage";
+import RefreshingBadge from "../../../components/ui/RefreshingBadge";
 import Button from "../../../components/ui/Button";
 import ContractorPaymentsFiltersDialog from "../../../components/tables/filters/ContractorPaymentsFiltersDialog";
 import { useContractorPayments } from "../../../hooks/finance/payments/useContractorPayments";
@@ -26,7 +27,8 @@ function uniqueSorted(values: (string | undefined | null)[]): string[] {
 }
 
 const ContractorPaymentsPage = () => {
-  const { payments, loading, error, refetch } = useContractorPayments();
+  const { payments, loading, error, refetch, refreshing } =
+    useContractorPayments();
   const {
     generate: generatePdf,
     loading: printing,
@@ -110,7 +112,7 @@ const ContractorPaymentsPage = () => {
               <>
                 <div className="px-6 pt-6">
                   <h1 className="text-2xl font-semibold text-gray-900">
-                    مدفوعات المقاولين
+                    مدفوعات المقاولين <RefreshingBadge show={refreshing} />
                   </h1>
                   <p className="text-sm text-gray-500 mt-1">
                     مراجعة دفعات المقاولين والموافقة عليها أو رفضها

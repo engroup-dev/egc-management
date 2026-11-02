@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ColumnDef } from "@tanstack/react-table";
 import { ChevronDown, Printer } from "lucide-react";
 import {
@@ -9,6 +10,7 @@ import {
 } from "../../../../hooks/finance/distribution/useUndistributedExpensePayments";
 import { useCan } from "../../../../hooks/permissions/useCan";
 import { supabase } from "../../../../lib/supabaseClient";
+import { TIERS } from "../../../../lib/queryClient";
 import { translatePaymentMethod } from "../../../../utils/translations";
 import { fetchManagementApi } from "../../../../lib/managementApiClient";
 import { formatCurrency, formatDate } from "../../../../utils/helpper";
@@ -86,6 +88,8 @@ type SectionKey = "expenses" | "maps" | "refunds";
 type RangeKey = SectionKey | "incomes";
 
 const EMPTY_DRAFT = { from: "", to: "" };
+// Stable fallback so the visibleIncomes memo doesn't recompute every render.
+const EMPTY_INCOMES: IncomeRow[] = [];
 
 const RangeControls = ({
   draft,
@@ -203,49 +207,13 @@ const BookProjectUndistributedExpenseTab = ({
     setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
   const [printError, setPrintError] = useState<string | null>(null);
   const [printing, setPrinting] = useState<SectionKey | "incomes" | null>(null);
-  const [projectName, setProjectName] = useState("مشروع غير معروف");
-  const [incomes, setIncomes] = useState<IncomeRow[]>([]);
+  const projectName = useProjectName(projectId);
+  const incomes = useProjectIncomes(projectId);
   // Same rule as the income tab: holding this permission means refund-only.
   const { can: restrictToRefunds, loading: incomePermissionLoading } = useCan(
     "view_project_finance_income",
   );
 
-  useEffect(() => {
-    let cancelled = false;
-    supabase
-      .from("projects")
-      .select("name")
-      .eq("id", projectId)
-      .single()
-      .then(({ data }) => {
-        if (!cancelled && data?.name) setProjectName(data.name);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    supabase
-      .from("project_incomes")
-      .select(
-        "id, serial_number, client_name, fund, description, payment_method, income_date, amount, currency",
-      )
-      .eq("project_id", projectId)
-      .order("serial_number", { ascending: true })
-      .then(({ data, error: incomesError }) => {
-        if (cancelled) return;
-        if (incomesError) {
-          console.error("Error fetching project incomes:", incomesError);
-          return;
-        }
-        setIncomes(data ?? []);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId]);
   const applyRange = (key: RangeKey) => {
     const f = drafts[key].from === "" ? null : Number(drafts[key].from);
     const t = drafts[key].to === "" ? null : Number(drafts[key].to);
@@ -521,3 +489,41 @@ const BookProjectUndistributedExpenseTab = ({
 };
 
 export default BookProjectUndistributedExpenseTab;
+
+function useProjectName(projectId: string) {
+  const { data } = useQuery({
+    queryKey: ["finance", "book-project", projectId, "name"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("projects")
+        .select("name")
+        .eq("id", projectId)
+        .single();
+      if (error) throw error;
+      return data?.name ?? null;
+    },
+  });
+  return data || "مشروع غير معروف";
+}
+
+function useProjectIncomes(projectId: string) {
+  const { data } = useQuery({
+    queryKey: ["finance", "book-project", projectId, "incomes"],
+    queryFn: async (): Promise<IncomeRow[]> => {
+      const { data, error } = await supabase
+        .from("project_incomes")
+        .select(
+          "id, serial_number, client_name, fund, description, payment_method, income_date, amount, currency",
+        )
+        .eq("project_id", projectId)
+        .order("serial_number", { ascending: true });
+      if (error) {
+        console.error("Error fetching project incomes:", error);
+        throw error;
+      }
+      return data ?? [];
+    },
+    ...TIERS.C,
+  });
+  return data ?? EMPTY_INCOMES;
+}
