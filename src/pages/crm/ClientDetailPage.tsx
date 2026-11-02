@@ -1,6 +1,7 @@
 import { useParams, Link } from "react-router-dom";
-import { useClient } from "../../hooks/useClients";
+import { useClient, useClientProjects } from "../../hooks/useClients";
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabaseClient";
 import { useCan } from "../../hooks/permissions/useCan";
 import LoadingPage from "../../components/ui/LoadingPage";
@@ -24,7 +25,6 @@ import {
   X,
   Loader2,
 } from "lucide-react";
-import { Projects } from "../../types/global.type";
 
 const ClientDetailPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -35,8 +35,8 @@ const ClientDetailPage = () => {
   // button before the answer is in.
   const { can: canManageClients, loading: checkingCanManage } =
     useCan("manage_clients");
-  const [projects, setProjects] = useState<Projects[]>([]);
-  const [loadingProjects, setLoadingProjects] = useState(true);
+  const queryClient = useQueryClient();
+  const { projects, loadingProjects } = useClientProjects(id);
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
@@ -64,30 +64,6 @@ const ClientDetailPage = () => {
     }
   }, [client]);
 
-  useEffect(() => {
-    async function fetchClientProjects() {
-      if (!id) return;
-
-      setLoadingProjects(true);
-      const { data, error } = await supabase
-        .from("projects")
-        .select("*")
-        .eq("client_id", id)
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.error("Error fetching projects:", error);
-      } else {
-        setProjects(data || []);
-      }
-      setLoadingProjects(false);
-    }
-
-    if (id) {
-      fetchClientProjects();
-    }
-  }, [id]);
-
   const handleSave = async () => {
     if (!id) return;
 
@@ -105,8 +81,9 @@ const ClientDetailPage = () => {
 
       if (error) throw error;
 
-      // Refresh client data
-      window.location.reload();
+      // Refresh client data. Was a full window reload, which now would just
+      // restore the old row from the persisted cache.
+      await queryClient.invalidateQueries({ queryKey: ["crm"] });
       setEditMode(false);
     } catch (err) {
       console.error("Error updating client:", err);

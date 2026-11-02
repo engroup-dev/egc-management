@@ -1,43 +1,46 @@
-import { useCallback, useEffect, useState } from "react";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { PostgrestError } from "@supabase/supabase-js";
 import { supabase } from "../../../lib/supabaseClient";
 import { OrdersWithVendors } from "../../../types/extended.type";
 
+export const shopProjectOrdersKey = (projectId: string) =>
+  ["shop", "orders", projectId] as const;
+
+async function fetchShopProjectOrders(
+  projectId: string,
+): Promise<OrdersWithVendors[]> {
+  const { data, error } = await supabase
+    .from("shop_orders")
+    .select("*, vendors(id, vendor_name)")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching shop orders:", error);
+    throw error;
+  }
+  return data ?? [];
+}
+
+export const shopProjectOrdersQueryOptions = (projectId: string) =>
+  queryOptions({
+    queryKey: shopProjectOrdersKey(projectId),
+    queryFn: () => fetchShopProjectOrders(projectId),
+    enabled: !!projectId,
+  });
+
 export function useOrders(projectId: string) {
-  const [orders, setOrders] = useState<OrdersWithVendors[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
+  const query = useQuery(shopProjectOrdersQueryOptions(projectId));
 
-  const fetchOrders = useCallback(async () => {
+  const refetch = async () => {
     if (!projectId) return;
-    setLoading(true);
-    setError(null);
+    await query.refetch();
+  };
 
-    try {
-      const { data, error: ordersError } = await supabase
-        .from("shop_orders")
-        .select("*, vendors(id, vendor_name)")
-        .eq("project_id", projectId)
-        .order("created_at", { ascending: false });
-
-      if (ordersError) {
-        console.error("Error fetching shop orders:", ordersError);
-        setError(ordersError);
-        return;
-      }
-
-      setOrders(data || []);
-    } catch (err) {
-      console.error("Unexpected error fetching shop orders:", err);
-      setError(err as PostgrestError);
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId]);
-
-  useEffect(() => {
-    fetchOrders();
-  }, [fetchOrders]);
-
-  return { orders, loading, error, refetch: fetchOrders };
+  return {
+    orders: query.data ?? [],
+    loading: query.isPending && !!projectId,
+    error: query.error as PostgrestError | null,
+    refetch,
+  };
 }

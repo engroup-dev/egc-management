@@ -1,5 +1,6 @@
 // hooks/shop/products/useProducts.ts
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PostgrestError } from "@supabase/supabase-js";
 import { Products, ProductSizes } from "../../../types/global.type";
 import { supabase } from "../../../lib/supabaseClient";
@@ -18,42 +19,43 @@ const PRODUCTS_SELECT = `
   )
 `;
 
+export const shopProductsKey = ["shop", "products"] as const;
+
+async function fetchShopProducts(): Promise<Products[]> {
+  const { data, error } = await supabase
+    .from("shop_products")
+    .select(PRODUCTS_SELECT);
+  if (error) {
+    console.error("Error fetching shop products:", error);
+    throw error;
+  }
+  return (data as Products[]) ?? [];
+}
+
+// Exported so the background prefetcher can warm this screen.
+export const shopProductsQueryOptions = () =>
+  queryOptions({ queryKey: shopProductsKey, queryFn: fetchShopProducts });
+
 export function useProducts() {
-  const [products, setProducts] = useState<Products[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
+  const queryClient = useQueryClient();
+  const query = useQuery(shopProductsQueryOptions());
+  // Forms read `loading` / `error` for their own submit.
+  const [mutating, setMutating] = useState(false);
+  const [mutationError, setMutationError] = useState<PostgrestError | null>(
+    null,
+  );
 
-  useEffect(() => {
-    async function fetchProducts() {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const { data, error: fetchError } = await supabase
-          .from("shop_products")
-          .select(PRODUCTS_SELECT);
-
-        if (fetchError) {
-          console.error("Error fetching shop products:", fetchError);
-          setError(fetchError);
-          return;
-        }
-
-        setProducts((data as Products[]) || []);
-      } catch (err) {
-        console.error("Unexpected error fetching shop products:", err);
-        setError(err as PostgrestError);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchProducts();
-  }, []);
+  const setActive = useCallback(
+    (id: string, isActive: boolean) =>
+      queryClient.setQueryData<Products[]>(shopProductsKey, (prev) =>
+        prev?.map((p) => (p.id === id ? { ...p, is_active: isActive } : p)),
+      ),
+    [queryClient],
+  );
 
   const addProduct = async (formValues: ShopProductFormValues) => {
-    setLoading(true);
-    setError(null);
+    setMutating(true);
+    setMutationError(null);
 
     const { sizes, ...productFields } = formValues;
 
@@ -66,7 +68,7 @@ export function useProducts() {
 
       if (insertError || !product) {
         console.error("Error adding shop product:", insertError);
-        setError(insertError);
+        setMutationError(insertError);
         return null;
       }
 
@@ -82,28 +84,28 @@ export function useProducts() {
 
       if (sizesError) {
         console.error("Error adding product sizes:", sizesError);
-        setError(sizesError);
+        setMutationError(sizesError);
         return null;
       }
 
-      setProducts((prev) => [...prev, product as Products]);
+      queryClient.setQueryData<Products[]>(shopProductsKey, (prev) =>
+        prev ? [...prev, product as Products] : prev,
+      );
+      queryClient.invalidateQueries({ queryKey: ["shop"] });
       return { product, sizes: insertedSizes as ProductSizes[] };
     } catch (err) {
       console.error("Unexpected error adding shop product:", err);
-      setError(err as PostgrestError);
+      setMutationError(err as PostgrestError);
       return null;
     } finally {
-      setLoading(false);
+      setMutating(false);
     }
   };
 
   const toggleProductActive = useCallback(
     async (id: string, isActive: boolean) => {
-      setError(null);
-
-      setProducts((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, is_active: isActive } : p)),
-      );
+      setMutationError(null);
+      setActive(id, isActive);
 
       try {
         const { data, error: updateError } = await supabase
@@ -115,25 +117,28 @@ export function useProducts() {
 
         if (updateError) {
           console.error("Error toggling product status:", updateError);
-          setError(updateError);
-          setProducts((prev) =>
-            prev.map((p) => (p.id === id ? { ...p, is_active: !isActive } : p)),
-          );
+          setMutationError(updateError);
+          setActive(id, !isActive);
           return null;
         }
 
+        queryClient.invalidateQueries({ queryKey: ["shop"] });
         return data;
       } catch (err) {
         console.error("Unexpected error toggling product status:", err);
-        setError(err as PostgrestError);
-        setProducts((prev) =>
-          prev.map((p) => (p.id === id ? { ...p, is_active: !isActive } : p)),
-        );
+        setMutationError(err as PostgrestError);
+        setActive(id, !isActive);
         return null;
       }
     },
-    [],
+    [queryClient, setActive],
   );
 
-  return { products, loading, error, addProduct, toggleProductActive };
+  return {
+    products: query.data ?? [],
+    loading: query.isPending || mutating,
+    error: mutationError ?? (query.error as PostgrestError | null),
+    addProduct,
+    toggleProductActive,
+  };
 }

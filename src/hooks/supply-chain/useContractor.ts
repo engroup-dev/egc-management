@@ -1,97 +1,100 @@
 import { PostgrestError } from "@supabase/supabase-js";
-import { useCallback, useEffect, useState } from "react";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabaseClient";
+import { TIERS } from "../../lib/queryClient";
 import { contractorWithSpecializations } from "../../types/extended.type";
 import { ProjectExpenseGroup } from "./vendors/useVendors";
 
-export function useContractor(contractorId: string) {
-  const [contractor, setContractor] =
-    useState<contractorWithSpecializations | null>(null);
-  const [groupedExpenses, setGroupedExpenses] = useState<ProjectExpenseGroup[]>(
-    [],
-  );
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<PostgrestError | null>(null);
+type ContractorData = {
+  contractor: contractorWithSpecializations | null;
+  groupedExpenses: ProjectExpenseGroup[];
+};
 
-  const fetchcontractor = useCallback(async () => {
-      setLoading(true);
-      try {
-        const { data, error } = await supabase
-          .from("contractors")
-          .select(
-            `*,
-            contractor_specialities (
-              speciality_id,
-              speciality:specialities (id, name)
-            ),
-            bank_approved_by_user:users!contractors_bank_approved_by_fkey (
-              first_name,
-              last_name
-            )
-          `,
-          )
-          .eq("id", contractorId)
-          .single();
+export const supplyChainContractorKey = (contractorId: string) =>
+  ["supply-chain", "contractor", contractorId] as const;
 
-        if (error) {
-          console.error("error fetching contractor", error);
-          setError(error);
-        } else {
-          setContractor(
-            data as unknown as contractorWithSpecializations | null,
-          );
-        }
+async function fetchSupplyChainContractor(
+  contractorId: string,
+): Promise<ContractorData> {
+  const { data, error } = await supabase
+    .from("contractors")
+    .select(
+      `*,
+      contractor_specialities (
+        speciality_id,
+        speciality:specialities (id, name)
+      ),
+      bank_approved_by_user:users!contractors_bank_approved_by_fkey (
+        first_name,
+        last_name
+      )
+    `,
+    )
+    .eq("id", contractorId)
+    .single();
 
-        const { data: expensesData, error: expensesError } = await supabase
-          .from("project_expenses")
-          .select("*, projects(id, name, serial_number)")
-          .eq("contractor_id", contractorId)
-          .is("deleted_at", null);
+  if (error) {
+    console.error("error fetching contractor", error);
+    throw error;
+  }
 
-        if (expensesError) {
-          console.error("error fetching contractor expenses", expensesError);
-          setError(expensesError);
-        } else {
-          const flat = expensesData ?? [];
+  const { data: expensesData, error: expensesError } = await supabase
+    .from("project_expenses")
+    .select("*, projects(id, name, serial_number)")
+    .eq("contractor_id", contractorId)
+    .is("deleted_at", null);
 
-          const groupMap = new Map<string, ProjectExpenseGroup>();
-          for (const expense of flat) {
-            const project = expense.projects;
-            const projectId = project?.id ?? "unknown";
+  if (expensesError) {
+    console.error("error fetching contractor expenses", expensesError);
+    throw expensesError;
+  }
 
-            if (!groupMap.has(projectId)) {
-              groupMap.set(projectId, {
-                projectId,
-                projectName: project?.name ?? "مشروع غير معروف",
-                projectSerialNumber: project?.serial_number ?? null,
-                expenses: [],
-              });
-            }
-            const group = groupMap.get(projectId);
-            if (group) {
-              group.expenses.push(expense);
-            }
-          }
+  const groupMap = new Map<string, ProjectExpenseGroup>();
+  for (const expense of expensesData ?? []) {
+    const project = expense.projects;
+    const projectId = project?.id ?? "unknown";
 
-          setGroupedExpenses(Array.from(groupMap.values()));
-        }
-      } catch (err) {
-        console.error("unexpected error fetching contractor", err);
-        setError(err as PostgrestError);
-      }
-      setLoading(false);
-  }, [contractorId]);
-
-  useEffect(() => {
-    fetchcontractor();
-  }, [fetchcontractor]);
+    if (!groupMap.has(projectId)) {
+      groupMap.set(projectId, {
+        projectId,
+        projectName: project?.name ?? "مشروع غير معروف",
+        projectSerialNumber: project?.serial_number ?? null,
+        expenses: [],
+      });
+    }
+    const group = groupMap.get(projectId);
+    if (group) {
+      group.expenses.push(expense);
+    }
+  }
 
   return {
-    contractor,
-    groupedExpenses,
-    loading,
-    error,
-    refetch: fetchcontractor,
+    contractor: data as unknown as contractorWithSpecializations | null,
+    groupedExpenses: Array.from(groupMap.values()),
   };
 }
 
+// Carries project_expenses, so it is a money read (tier C).
+export const supplyChainContractorQueryOptions = (contractorId: string) =>
+  queryOptions({
+    queryKey: supplyChainContractorKey(contractorId),
+    queryFn: () => fetchSupplyChainContractor(contractorId),
+    enabled: !!contractorId,
+    ...TIERS.C,
+  });
+
+export function useContractor(contractorId: string) {
+  const query = useQuery(supplyChainContractorQueryOptions(contractorId));
+
+  const refetch = async () => {
+    await query.refetch();
+  };
+
+  return {
+    contractor: query.data?.contractor ?? null,
+    groupedExpenses: query.data?.groupedExpenses ?? [],
+    loading: query.isPending && !!contractorId,
+    error: query.error as PostgrestError | null,
+    refetch,
+  };
+}
