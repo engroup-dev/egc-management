@@ -3,6 +3,7 @@ import { useForm, useWatch } from "react-hook-form";
 import type { Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import Button from "../../ui/Button";
 import { TextField } from "../../ui/inputs/TextField";
 import { SelectField } from "../../ui/inputs/SelectField";
@@ -19,6 +20,7 @@ import {
 import { createApplicant } from "../../../services/hr/applicantsService";
 import { submitAnswers } from "../../../services/hr/applicantAnswersService";
 import { useJobRequests } from "../../../hooks/hr/useJobRequests";
+import { hrApplicantsKey } from "../../../hooks/hr/useApplicants";
 import { useJobRequestQuestions } from "../../../hooks/hr/useJobRequestQuestions";
 import { useScoringConfig } from "../../../hooks/hr/useScoringConfig";
 import {
@@ -32,6 +34,7 @@ import {
 const ApplicantForm: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { jobRequests, loading: jobRequestsLoading } = useJobRequests(true);
   const { universities, gpaTiers } = useScoringConfig();
 
@@ -98,6 +101,7 @@ const ApplicantForm: React.FC = () => {
         }
       }
 
+      queryClient.invalidateQueries({ queryKey: hrApplicantsKey });
       navigate("/hr/applicants");
     } catch (error) {
       console.error("Unexpected error creating applicant:", error);

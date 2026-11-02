@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addBankOption,
   createBankQuestion,
@@ -12,27 +13,39 @@ import {
 } from "../../services/hr/questionBankService";
 import type { QuestionBankWithOptions } from "../../types/hr.type";
 
+export const hrQuestionBankKey = ["hr", "question-bank"] as const;
+
+async function fetchQuestionBank(): Promise<QuestionBankWithOptions[]> {
+  const { data, error } = await listQuestionBank();
+  if (error) throw error;
+  return (data ?? []) as QuestionBankWithOptions[];
+}
+
+// Exported so the background prefetcher can warm this screen.
+export const hrQuestionBankQueryOptions = () =>
+  queryOptions({ queryKey: hrQuestionBankKey, queryFn: fetchQuestionBank });
+
 export function useQuestionBank() {
-  const [questions, setQuestions] = useState<QuestionBankWithOptions[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const query = useQuery(hrQuestionBankQueryOptions());
+  const { refetch: refetchQuery } = query;
+  const questions = query.data ?? [];
+
+  const setQuestions = useCallback(
+    (
+      updater: (prev: QuestionBankWithOptions[]) => QuestionBankWithOptions[],
+    ) => {
+      queryClient.setQueryData<QuestionBankWithOptions[]>(
+        hrQuestionBankKey,
+        (prev) => updater(prev ?? []),
+      );
+    },
+    [queryClient],
+  );
 
   const refetch = useCallback(async () => {
-    setLoading(true);
-    const { data, error } = await listQuestionBank();
-    if (error) {
-      console.error("Error fetching question bank:", error);
-      setError("فشل في تحميل بنك الأسئلة");
-    } else {
-      setError(null);
-      setQuestions((data ?? []) as QuestionBankWithOptions[]);
-    }
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
+    await refetchQuery();
+  }, [refetchQuery]);
 
   const create = useCallback(
     async (input: CreateBankQuestionInput) => {
@@ -62,13 +75,13 @@ export function useQuestionBank() {
       );
       return { success: true };
     },
-    [],
+    [setQuestions],
   );
 
   const reorder = useCallback(
     async (next: QuestionBankWithOptions[]) => {
       const withOrder = next.map((q, index) => ({ ...q, sort_order: index }));
-      setQuestions(withOrder);
+      setQuestions(() => withOrder);
       const { error } = await reorderBankQuestions(
         withOrder.map((q) => ({ id: q.id, sort_order: q.sort_order })),
       );
@@ -77,7 +90,7 @@ export function useQuestionBank() {
         refetch();
       }
     },
-    [refetch],
+    [setQuestions, refetch],
   );
 
   const addOption = useCallback(
@@ -123,8 +136,8 @@ export function useQuestionBank() {
 
   return {
     questions,
-    loading,
-    error,
+    loading: query.isPending,
+    error: query.error ? "فشل في تحميل بنك الأسئلة" : null,
     refetch,
     create,
     update,

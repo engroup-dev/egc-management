@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import {
   listReviewsForEmployee,
   submitPerformanceReview,
@@ -6,28 +7,34 @@ import {
 } from "../../services/hr/performanceReviewService";
 import type { PerformanceReviewWithRatings } from "../../types/hr.type";
 
+export const hrPerformanceReviewsKey = (employeeId: string | undefined) =>
+  ["hr", "performance-reviews", employeeId] as const;
+
+async function fetchPerformanceReviews(
+  employeeId: string,
+): Promise<PerformanceReviewWithRatings[]> {
+  const { data, error } = await listReviewsForEmployee(employeeId);
+  if (error) throw error;
+  return data;
+}
+
+export const hrPerformanceReviewsQueryOptions = (
+  employeeId: string | undefined,
+) =>
+  queryOptions({
+    queryKey: hrPerformanceReviewsKey(employeeId),
+    queryFn: () => fetchPerformanceReviews(employeeId as string),
+    enabled: !!employeeId,
+  });
+
 export function usePerformanceReviews(employeeId: string | undefined) {
-  const [reviews, setReviews] = useState<PerformanceReviewWithRatings[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const query = useQuery(hrPerformanceReviewsQueryOptions(employeeId));
+  const { refetch: refetchQuery } = query;
 
   const refetch = useCallback(async () => {
     if (!employeeId) return;
-    setLoading(true);
-    const { data, error } = await listReviewsForEmployee(employeeId);
-    if (error) {
-      console.error("Error fetching performance reviews:", error);
-      setError("فشل في تحميل تقييمات الأداء");
-    } else {
-      setError(null);
-      setReviews(data);
-    }
-    setLoading(false);
-  }, [employeeId]);
-
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
+    await refetchQuery();
+  }, [employeeId, refetchQuery]);
 
   const submit = useCallback(
     async (input: SubmitPerformanceReviewInput) => {
@@ -38,5 +45,11 @@ export function usePerformanceReviews(employeeId: string | undefined) {
     [refetch],
   );
 
-  return { reviews, loading, error, submit, refetch };
+  return {
+    reviews: query.data ?? [],
+    loading: query.isPending,
+    error: query.error ? "فشل في تحميل تقييمات الأداء" : null,
+    submit,
+    refetch,
+  };
 }

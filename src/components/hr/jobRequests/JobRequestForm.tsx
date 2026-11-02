@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form";
 import type { Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import Button from "../../ui/Button";
 import { TextField } from "../../ui/inputs/TextField";
 import { SelectField } from "../../ui/inputs/SelectField";
@@ -13,12 +14,14 @@ import {
   JobRequestFormValues,
 } from "../../../types/schema/jobRequest.schema";
 import { createJobRequest } from "../../../services/hr/jobRequestsService";
+import { hrJobRequestsKey } from "../../../hooks/hr/useJobRequests";
 import { useDepartments } from "../../../hooks/permissions/useDepartments";
 import { useAuth } from "../../../hooks/useAuth";
 
 const JobRequestForm: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { user } = useAuth();
   const { data: departments = [] } = useDepartments();
 
@@ -41,6 +44,7 @@ const JobRequestForm: React.FC = () => {
         alert("خطأ في إنشاء طلب التوظيف: " + response.message);
         return;
       }
+      queryClient.invalidateQueries({ queryKey: hrJobRequestsKey });
       navigate(`/hr/job-requests/${response.data.id}`);
     } catch (error) {
       console.error("Unexpected error creating job request:", error);

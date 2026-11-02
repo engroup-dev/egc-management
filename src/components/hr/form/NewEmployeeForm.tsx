@@ -14,6 +14,7 @@ import { useUtils } from "../../../hooks/useUtils";
 import { useDepartments } from "../../../hooks/permissions/useDepartments";
 import { ImageUploadField } from "../../ui/inputs/ImageUploadField";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { EMPLOYEE_TYPE } from "../../../enum/employee";
 import { linkHiredEmployee } from "../../../services/hr/applicantsService";
 
@@ -39,6 +40,7 @@ const NewEmployeeForm: React.FC<NewEmployeeFormProps> = ({
   const { data: departments = [], isPending: departmentsLoading } =
     useDepartments();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const {
     register,
@@ -83,6 +85,9 @@ const NewEmployeeForm: React.FC<NewEmployeeFormProps> = ({
         }
       }
 
+      // Employee lists, managers and the hired applicant are all cached.
+      queryClient.invalidateQueries({ queryKey: ["employees"] });
+      queryClient.invalidateQueries({ queryKey: ["hr"] });
       setSuccess("تم اضافة الموظف بنجاح");
       reset();
       navigate(applicantId ? `/hr/applicants/${applicantId}` : "/hr/employees");

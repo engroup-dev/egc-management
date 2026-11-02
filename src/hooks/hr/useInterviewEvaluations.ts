@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import {
   listEvaluationsForApplicant,
   submitInterviewEvaluation,
@@ -6,30 +7,34 @@ import {
 } from "../../services/hr/interviewEvaluationService";
 import type { InterviewEvaluationWithRatings } from "../../types/hr.type";
 
+export const hrInterviewEvaluationsKey = (applicantId: string | undefined) =>
+  ["hr", "interview-evaluations", applicantId] as const;
+
+async function fetchInterviewEvaluations(
+  applicantId: string,
+): Promise<InterviewEvaluationWithRatings[]> {
+  const { data, error } = await listEvaluationsForApplicant(applicantId);
+  if (error) throw error;
+  return data;
+}
+
+export const hrInterviewEvaluationsQueryOptions = (
+  applicantId: string | undefined,
+) =>
+  queryOptions({
+    queryKey: hrInterviewEvaluationsKey(applicantId),
+    queryFn: () => fetchInterviewEvaluations(applicantId as string),
+    enabled: !!applicantId,
+  });
+
 export function useInterviewEvaluations(applicantId: string | undefined) {
-  const [evaluations, setEvaluations] = useState<
-    InterviewEvaluationWithRatings[]
-  >([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const query = useQuery(hrInterviewEvaluationsQueryOptions(applicantId));
+  const { refetch: refetchQuery } = query;
 
   const refetch = useCallback(async () => {
     if (!applicantId) return;
-    setLoading(true);
-    const { data, error } = await listEvaluationsForApplicant(applicantId);
-    if (error) {
-      console.error("Error fetching interview evaluations:", error);
-      setError("فشل في تحميل تقييمات المقابلة");
-    } else {
-      setError(null);
-      setEvaluations(data);
-    }
-    setLoading(false);
-  }, [applicantId]);
-
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
+    await refetchQuery();
+  }, [applicantId, refetchQuery]);
 
   const submit = useCallback(
     async (input: SubmitInterviewEvaluationInput) => {
@@ -40,5 +45,11 @@ export function useInterviewEvaluations(applicantId: string | undefined) {
     [refetch],
   );
 
-  return { evaluations, loading, error, submit, refetch };
+  return {
+    evaluations: query.data ?? [],
+    loading: query.isPending,
+    error: query.error ? "فشل في تحميل تقييمات المقابلة" : null,
+    submit,
+    refetch,
+  };
 }

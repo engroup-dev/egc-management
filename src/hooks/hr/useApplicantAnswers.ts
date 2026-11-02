@@ -1,29 +1,41 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { getAnswersForApplicant } from "../../services/hr/applicantAnswersService";
 import type { ApplicantAnswerWithQuestion } from "../../types/hr.type";
 
+export const hrApplicantAnswersKey = (applicantId: string | undefined) =>
+  ["hr", "applicant-answers", applicantId] as const;
+
+async function fetchApplicantAnswers(
+  applicantId: string,
+): Promise<ApplicantAnswerWithQuestion[]> {
+  const { data, error } = await getAnswersForApplicant(applicantId);
+  if (error) throw error;
+  return data;
+}
+
+export const hrApplicantAnswersQueryOptions = (
+  applicantId: string | undefined,
+) =>
+  queryOptions({
+    queryKey: hrApplicantAnswersKey(applicantId),
+    queryFn: () => fetchApplicantAnswers(applicantId as string),
+    enabled: !!applicantId,
+  });
+
 export function useApplicantAnswers(applicantId: string | undefined) {
-  const [answers, setAnswers] = useState<ApplicantAnswerWithQuestion[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const query = useQuery(hrApplicantAnswersQueryOptions(applicantId));
+  const { refetch: refetchQuery } = query;
 
   const refetch = useCallback(async () => {
     if (!applicantId) return;
-    setLoading(true);
-    const { data, error } = await getAnswersForApplicant(applicantId);
-    if (error) {
-      console.error("Error fetching applicant answers:", error);
-      setError("فشل في تحميل إجابات الاستبيان");
-    } else {
-      setError(null);
-      setAnswers(data);
-    }
-    setLoading(false);
-  }, [applicantId]);
+    await refetchQuery();
+  }, [applicantId, refetchQuery]);
 
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
-
-  return { answers, loading, error, refetch };
+  return {
+    answers: query.data ?? [],
+    loading: query.isPending,
+    error: query.error ? "فشل في تحميل إجابات الاستبيان" : null,
+    refetch,
+  };
 }

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addJobRequestQuestionOption,
   addFreeformQuestion,
@@ -13,30 +14,50 @@ import {
 } from "../../services/hr/jobRequestQuestionsService";
 import type { JobRequestQuestionWithOptions } from "../../types/hr.type";
 
+export const hrJobRequestQuestionsKey = (jobRequestId: string | undefined) =>
+  ["hr", "job-request-questions", jobRequestId] as const;
+
+async function fetchJobRequestQuestions(
+  jobRequestId: string,
+): Promise<JobRequestQuestionWithOptions[]> {
+  const { data, error } = await listQuestionsForJobRequest(jobRequestId);
+  if (error) throw error;
+  return data;
+}
+
+export const hrJobRequestQuestionsQueryOptions = (
+  jobRequestId: string | undefined,
+) =>
+  queryOptions({
+    queryKey: hrJobRequestQuestionsKey(jobRequestId),
+    queryFn: () => fetchJobRequestQuestions(jobRequestId as string),
+    enabled: !!jobRequestId,
+  });
+
 export function useJobRequestQuestions(jobRequestId: string | undefined) {
-  const [questions, setQuestions] = useState<JobRequestQuestionWithOptions[]>(
-    [],
+  const queryClient = useQueryClient();
+  const query = useQuery(hrJobRequestQuestionsQueryOptions(jobRequestId));
+  const { refetch: refetchQuery } = query;
+  const questions = query.data ?? [];
+
+  const setQuestions = useCallback(
+    (
+      updater: (
+        prev: JobRequestQuestionWithOptions[],
+      ) => JobRequestQuestionWithOptions[],
+    ) => {
+      queryClient.setQueryData<JobRequestQuestionWithOptions[]>(
+        hrJobRequestQuestionsKey(jobRequestId),
+        (prev) => updater(prev ?? []),
+      );
+    },
+    [queryClient, jobRequestId],
   );
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
     if (!jobRequestId) return;
-    setLoading(true);
-    const { data, error } = await listQuestionsForJobRequest(jobRequestId);
-    if (error) {
-      console.error("Error fetching job request questions:", error);
-      setError("فشل في تحميل أسئلة الوظيفة");
-    } else {
-      setError(null);
-      setQuestions(data);
-    }
-    setLoading(false);
-  }, [jobRequestId]);
-
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
+    await refetchQuery();
+  }, [jobRequestId, refetchQuery]);
 
   const copyFromBank = useCallback(
     async (bankQuestionId: string) => {
@@ -82,13 +103,13 @@ export function useJobRequestQuestions(jobRequestId: string | undefined) {
       setQuestions((prev) => prev.filter((q) => q.id !== id));
       return { success: true };
     },
-    [],
+    [setQuestions],
   );
 
   const reorder = useCallback(
     async (next: JobRequestQuestionWithOptions[]) => {
       const withOrder = next.map((q, index) => ({ ...q, sort_order: index }));
-      setQuestions(withOrder);
+      setQuestions(() => withOrder);
       const { error } = await reorderJobRequestQuestions(
         withOrder.map((q) => ({ id: q.id, sort_order: q.sort_order })),
       );
@@ -97,7 +118,7 @@ export function useJobRequestQuestions(jobRequestId: string | undefined) {
         refetch();
       }
     },
-    [refetch],
+    [setQuestions, refetch],
   );
 
   const addOption = useCallback(
@@ -151,8 +172,8 @@ export function useJobRequestQuestions(jobRequestId: string | undefined) {
 
   return {
     questions,
-    loading,
-    error,
+    loading: query.isPending,
+    error: query.error ? "فشل في تحميل أسئلة الوظيفة" : null,
     refetch,
     copyFromBank,
     addFreeform,
