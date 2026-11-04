@@ -4,19 +4,35 @@ on:
   push:
     tags:
       - "v*"
+  # Manual run: rebuild and (re)publish an existing tag with the CURRENT
+  # workflow — e.g. when a platform's runner was unavailable for the tag
+  # push. Re-running the original run would reuse the workflow as it was
+  # at that tag.
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and publish, e.g. v1.1.25"
+        required: true
 
 permissions:
   contents: write
 
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
 jobs:
   make:
     strategy:
+      # One platform failing (or never getting a runner — GitHub's macOS
+      # pool has had capacity outages) must not cancel the other.
+      fail-fast: false
       matrix:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - uses: actions/setup-node@v4
         with:
@@ -44,6 +60,9 @@ jobs:
 
   publish:
     needs: make
+    # Publish whatever platforms built. Windows auto-update must not wait
+    # on a macOS runner; a missing DMG can be added by a manual run later.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -52,11 +71,17 @@ jobs:
           path: dist/
 
       - name: List downloaded files
-        run: find dist -type f
+        run: |
+          find dist -type f
+          if [ -z "$(find dist -type f 2>/dev/null)" ]; then
+            echo "No platform built successfully — nothing to publish." >&2
+            exit 1
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           draft: true
           files: |
             dist/**/*.exe
@@ -73,3 +98,8 @@ jobs:
           echo "Auto-update will NOT work until you publish it." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "https://github.com/${{ github.repository }}/releases" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.make.result }}" != "success" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ⚠️ Not every platform built" >> $GITHUB_STEP_SUMMARY
+            echo "Re-run with: Actions → Build and Publish → Run workflow → tag ${{ env.RELEASE_TAG }}" >> $GITHUB_STEP_SUMMARY
+          fi
