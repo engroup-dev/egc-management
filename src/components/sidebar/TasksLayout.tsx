@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { useSidebar } from "../../contexts/SidebarContext";
 import { supabase } from "../../lib/supabaseClient";
+import { TIERS } from "../../lib/queryClient";
 import { useTasksSidebar, type SpaceType } from "../../hooks/tasks/useTasksSidebar";
 import { setTaskErrorListener } from "../../hooks/tasks/taskErrorBus";
 import { searchSidebarEntities, type EntityMatches } from "../../hooks/tasks/tasksSidebarSearch";

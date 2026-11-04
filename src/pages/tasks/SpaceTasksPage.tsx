@@ -264,8 +264,13 @@ export default function SpaceTasksPage({ view }: { view: "list" | "gantt" | "zon
 
   if (error || !data) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-red-500">
-        تعذّر تحميل مهام المساحة
+      <div className="flex flex-col h-full items-center justify-center text-sm text-red-500">
+        <div>تعذّر تحميل مهام المساحة</div>
+        {error && (
+          <div className="text-xs text-red-400 mt-2 font-mono max-w-lg text-center bg-red-50 p-2 rounded">
+            {error instanceof Error ? error.message : String(error)}
+          </div>
+        )}
       </div>
     );
   }

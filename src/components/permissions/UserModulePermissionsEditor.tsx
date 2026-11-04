@@ -106,6 +106,7 @@ export default function UserModulePermissionsEditor({
   const { data: savedGrants, isLoading: grantsLoading } = useGrants(
     "user",
     userId,
+    { initialData: selectedUser.overrides },
   );
   const { data: effective } = useEffectivePermissions(userId);
   const { data: inherited } = useInheritedGrants(userId);
@@ -375,7 +376,7 @@ export default function UserModulePermissionsEditor({
     }
   };
 
-  if (catalogLoading || grantsLoading) {
+  if (catalogLoading || (grantsLoading && !savedGrants)) {
     return <LoadingPage label="جاري تحميل الصلاحيات..." />;
   }
 

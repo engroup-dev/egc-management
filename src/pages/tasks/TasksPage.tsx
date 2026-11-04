@@ -2,6 +2,7 @@ import { useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { Users, UserCog, Shapes, Building2, FolderKanban, Building, User, Search, X, Layers, Plus, Settings, LayoutGrid, List } from "lucide-react";
 import { useTasksSidebar, type BoardWithCount, type SpaceNode, type SpaceType } from "../../hooks/tasks/useTasksSidebar";
+import { useTaskDirectory } from "../../hooks/tasks/useTaskDirectory";
 import { matchSpaceNode } from "../../hooks/tasks/tasksSidebarSearch";
 import { useMyTaskAccess, useSpaceCaps } from "../../hooks/tasks/useTaskAccess";
 import NewBoardModal from "../../components/sidebar/NewBoardModal";
@@ -261,6 +262,8 @@ function SpaceCard({
 export default function TasksPage() {
   const { data, loading } = useTasksSidebar();
   const { access } = useMyTaskAccess();
+  // Pre-warm directory views in the background so "حسب الموظف", "حسب نوع المهمة", and "حسب المشروع" open instantly.
+  useTaskDirectory();
   const [search, setSearch] = useState("");
   const searching = search.trim().length > 0;
   const [layout, setLayout] = useState<SpacesLayout>(loadLayout);

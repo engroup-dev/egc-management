@@ -28,6 +28,7 @@ import RequirePermission from "./auth/RequirePermission";
 import NotificationsPage from "../pages/notifications/NotificationsPage";
 import NotificationSettingsPage from "../pages/profile/NotificationSettingsPage";
 import BackgroundPrefetch from "./providers/BackgroundPrefetch";
+import AnalyticsPage from "../pages/analytics/AnalyticsPage";
 
 const AppRouter = () => {
   // Known synchronously from the stored session (src/lib/authUser.ts), so
@@ -118,7 +119,6 @@ const AppRouter = () => {
               {/* Projects */}
               <Route path="/projects/*" element={<ProjectsRoutes />} />
 
-              {/* Finance */}
               <Route
                 element={<RequirePermission permission="view_finance_section" />}
               >
@@ -128,6 +128,7 @@ const AppRouter = () => {
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/profile/notifications" element={<NotificationSettingsPage />} />
               <Route path="/notifications" element={<NotificationsPage />} />
+              <Route path="/analytics" element={<AnalyticsPage />} />
 
               {/* Settings */}
               <Route

@@ -1,6 +1,6 @@
 import { Component, ErrorInfo, ReactNode, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { HardHat, LayoutGrid, Search, User, UserCheck, Users } from "lucide-react";
+import { HardHat, LayoutGrid, Search, Smartphone, User, UserCheck, Users } from "lucide-react";
 import {
   PermissionUserSummary,
   usePermissionUsers,
@@ -8,6 +8,7 @@ import {
 import UserModulePermissionsEditor from "../../../components/permissions/UserModulePermissionsEditor";
 import ProjectAccessMatrix from "../../../components/permissions/ProjectAccessMatrix";
 import EngineerProjectsAccess from "../../../components/permissions/EngineerProjectsAccess";
+import MobileBuilderPermissionsTab from "../../../components/permissions/MobileBuilderPermissionsTab";
 import Button from "../../../components/ui/Button";
 import LoadingPage from "../../../components/ui/LoadingPage";
 import ErrorPage from "../../../components/ui/errorPage";
@@ -73,7 +74,7 @@ export default function UserPermissionsPage() {
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const [onlyCustomized, setOnlyCustomized] = useState(false);
   const [activeTab, setActiveTab] = useState<
-    "person" | "engineer-projects" | "matrix"
+    "person" | "engineer-projects" | "mobile-builder" | "matrix"
   >("person");
 
   const [isDirty, setIsDirty] = useState(false);
@@ -222,6 +223,19 @@ export default function UserPermissionsPage() {
           >
             <HardHat size={15} />
             <span>مهندس محدد (صلاحيات المشاريع)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("mobile-builder")}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+              activeTab === "mobile-builder"
+                ? "bg-primary text-white shadow-2xs"
+                : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50 hover:text-gray-900"
+            }`}
+          >
+            <Smartphone size={15} />
+            <span>صلاحيات تطبيق الهاتف (EGC Builder)</span>
           </button>
 
           <button
@@ -387,6 +401,17 @@ export default function UserPermissionsPage() {
         </div>
         ) : activeTab === "engineer-projects" ? (
           <EngineerProjectsAccess
+            selectedUser={selectedUser}
+            allUsers={users ?? []}
+            onSelectUser={(u) => {
+              handleSelectUser(u);
+            }}
+            onSwitchToSystemPermissions={() => {
+              setActiveTab("person");
+            }}
+          />
+        ) : activeTab === "mobile-builder" ? (
+          <MobileBuilderPermissionsTab
             selectedUser={selectedUser}
             allUsers={users ?? []}
             onSelectUser={(u) => {

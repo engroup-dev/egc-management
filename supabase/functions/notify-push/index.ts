@@ -68,14 +68,26 @@ function expoHeaders(appId?: string): Record<string, string> {
 }
 
 async function sendBatch(appId: string, batch: Message[]): Promise<Result[]> {
-  const body = batch.map((m) => ({
-    to: m.to,
-    title: m.title,
-    body: m.body,
-    sound: m.sound ?? "default",
-    priority: m.priority ?? "default",
-    data: m.data ?? {},
-  }));
+  const body = batch.map((m) => {
+    const isPenalty =
+      m.sound?.includes("penalty") ||
+      (m.data && (
+        String(m.data.event_key ?? "").includes("penalty") ||
+        String(m.data.type ?? "").includes("penalty")
+      )) ||
+      (m.title && (m.title.includes("غرامة") || m.title.includes("خصم"))) ||
+      (m.body && (m.body.includes("غرامة") || m.body.includes("خصم")));
+
+    return {
+      to: m.to,
+      title: m.title,
+      body: m.body,
+      sound: isPenalty ? "penalty_alert.wav" : (m.sound ?? "default"),
+      priority: isPenalty ? "high" : (m.priority ?? "default"),
+      channelId: isPenalty ? "penalties" : "default",
+      data: m.data ?? {},
+    };
+  });
   let res: Response;
   try {
     res = await fetch(EXPO_SEND, {

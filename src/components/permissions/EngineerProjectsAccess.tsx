@@ -242,6 +242,8 @@ export default function EngineerProjectsAccess({
   const { data: userTeamGrants, refetch: refetchUserTeamGrants } = useQuery({
     queryKey: ["user-all-tm-grants", activeUser?.id],
     enabled: Boolean(activeUser?.id && corePermIds.length > 0),
+    staleTime: 60 * 1000,
+    gcTime: 5 * 60 * 1000,
     queryFn: async () => {
       const { data, error } = await permissionsDb
         .from("team_member_permission_grants")
@@ -261,6 +263,8 @@ export default function EngineerProjectsAccess({
   const { data: roleGrants } = useQuery({
     queryKey: ["role-grants-core", activeUser?.role_id],
     enabled: Boolean(activeUser?.role_id && corePermIds.length > 0),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
     queryFn: async () => {
       const { data, error } = await permissionsDb
         .from("role_permission_grants")
@@ -280,6 +284,8 @@ export default function EngineerProjectsAccess({
   const { data: deptGrants } = useQuery({
     queryKey: ["dept-grants-core", activeUser?.department_id],
     enabled: Boolean(activeUser?.department_id && corePermIds.length > 0),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
     queryFn: async () => {
       const { data, error } = await permissionsDb
         .from("department_permission_grants")

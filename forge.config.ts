@@ -49,7 +49,7 @@ const config: ForgeConfig = {
         owner: "engroup-dev",
         name: "egc-management",
       },
-      draft: true,
+      draft: false,
       prerelease: false,
     }),
   ],

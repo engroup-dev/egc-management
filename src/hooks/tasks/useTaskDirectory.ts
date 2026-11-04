@@ -10,6 +10,28 @@ import { recordAssignees, recordTaskPatch } from "./taskUndo";
 import { invalidateSchedule, saveTaskSchedule, type ScheduleChange } from "./useTaskSchedule";
 import { dueFromDays, workingDayOnOrAfterString } from "../../components/tasks/board/workingDays";
 import { loadDependencyFlags, type DependencyFlags, type TaskLinks } from "./dependencyFlags";
+import { TIERS } from "../../lib/queryClient";
+
+async function fetchInChunks<T>(
+  ids: string[],
+  chunkSize: number,
+  fetchFn: (chunk: string[]) => PromiseLike<{ data: T[] | null; error: unknown }>
+): Promise<{ data: T[]; error: unknown }> {
+  if (ids.length === 0) return { data: [], error: null };
+  if (ids.length <= chunkSize) {
+    const res = await fetchFn(ids);
+    return { data: res.data ?? [], error: res.error };
+  }
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    chunks.push(ids.slice(i, i + chunkSize));
+  }
+  const results = await Promise.all(chunks.map(fetchFn));
+  for (const r of results) {
+    if (r.error) return { data: [], error: r.error };
+  }
+  return { data: results.flatMap((r) => r.data ?? []), error: null };
+}
 
 // =====================================================================
 // Shared data + mutations for the "directory" views — AssigneeViewPage
@@ -93,88 +115,132 @@ export function useTaskDirectory(options?: { spaceId?: string }) {
   const query = useQuery({
     queryKey,
     enabled: !!user?.id && !!access,
+    staleTime: TIERS.B.staleTime,
+    gcTime: TIERS.B.gcTime,
+    placeholderData: (prev) => prev,
     queryFn: async (): Promise<TaskDirectoryData> => {
-      if (!user?.id || !access) throw new Error("no user");
+      try {
+        if (!user?.id || !access) throw new Error("no user");
 
       let boards: { id: string; name: string; space_id: string; sort_order: number }[];
-      // space_id → space name, for the "where did this task come from"
-      // column. Both branches populate it; the scoped branch only ever
-      // has the one space in it.
       let spaceNamesById = new Map<string, string>();
       let spaceCreatorById = new Map<string, string>();
+
+      // ─── BATCH 1: Metadata + Spaces in parallel ───
+      const [
+        spacesResult,
+        statusResult,
+        taskTypesResult,
+        tagsResult,
+      ] = await Promise.all([
+        spaceId
+          ? Promise.all([
+              tasksDb
+                .from("boards")
+                .select("id, name, space_id, sort_order")
+                .eq("space_id", spaceId)
+                .eq("is_archived", false)
+                .eq("is_template", false),
+              tasksDb
+                .from("spaces")
+                .select("id, name, created_by")
+                .eq("id", spaceId)
+                .maybeSingle(),
+            ])
+          : tasksDb
+              .from("spaces")
+              .select("id, name, created_by")
+              .eq("is_archived", false)
+              .eq("is_template", false),
+        tasksDb
+          .from("statuses")
+          .select("*")
+          .order("sort_order", { ascending: true }),
+        tasksDb
+          .from("task_types")
+          .select("id, name, name_ar, color")
+          .order("name_ar"),
+        tasksDb
+          .from("tags")
+          .select("id, name, color"),
+      ]);
+
+      if (statusResult.error) {
+        console.error("useTaskDirectory statusResult error:", statusResult.error);
+        throw statusResult.error;
+      }
+      if (taskTypesResult.error) {
+        console.error("useTaskDirectory taskTypesResult error:", taskTypesResult.error);
+        throw taskTypesResult.error;
+      }
+      if (tagsResult.error) {
+        console.error("useTaskDirectory tagsResult error:", tagsResult.error);
+        throw tagsResult.error;
+      }
+
+      const statusRows = statusResult.data ?? [];
+      const taskTypeRows = taskTypesResult.data ?? [];
+      const tagRows = tagsResult.data ?? [];
+      const tagById = new Map(tagRows.map((t) => [t.id, t]));
+
       if (spaceId) {
-        // Scoped to one already-chosen space — no visibility resolution
-        // needed, and boards.space_id covers folder-nested boards too
-        // (folder_id is a separate, optional column; every board still
-        // carries its own space_id directly, same as useTasksSidebar.ts's
-        // own boards query relies on).
-        const [{ data, error }, { data: spaceRow, error: spaceError }] = await Promise.all([
-          tasksDb.from("boards").select("id, name, space_id, sort_order").eq("space_id", spaceId).eq("is_archived", false).eq("is_template", false),
-          tasksDb.from("spaces").select("id, name, created_by").eq("id", spaceId).maybeSingle(),
-        ]);
-        if (error) throw error;
-        if (spaceError) throw spaceError;
-        boards = data ?? [];
-        if (spaceRow) spaceNamesById.set(spaceRow.id, spaceRow.name);
-        if (spaceRow?.created_by) spaceCreatorById.set(spaceRow.id, spaceRow.created_by);
+        const [boardsRes, spaceRes] = spacesResult as [
+          { data: { id: string; name: string; space_id: string; sort_order: number }[] | null; error: unknown },
+          { data: { id: string; name: string; created_by: string | null } | null; error: unknown },
+        ];
+        if (boardsRes.error) throw boardsRes.error;
+        if (spaceRes.error) throw spaceRes.error;
+        boards = boardsRes.data ?? [];
+        if (spaceRes.data) {
+          spaceNamesById.set(spaceRes.data.id, spaceRes.data.name);
+          if (spaceRes.data.created_by) spaceCreatorById.set(spaceRes.data.id, spaceRes.data.created_by);
+        }
       } else {
-        const { data: spaces, error: spacesError } = await tasksDb
-          .from("spaces")
-          .select("id, name, created_by")
-          .eq("is_archived", false)
-          .eq("is_template", false);
-        if (spacesError) throw spacesError;
-        spaceNamesById = new Map((spaces ?? []).map((s) => [s.id, s.name]));
+        const spacesRes = spacesResult as {
+          data: { id: string; name: string; created_by: string | null }[] | null;
+          error: unknown;
+        };
+        if (spacesRes.error) throw spacesRes.error;
+        const spaces = spacesRes.data ?? [];
+        spaceNamesById = new Map(spaces.map((s) => [s.id, s.name]));
         spaceCreatorById = new Map(
-          (spaces ?? []).filter((s) => !!s.created_by).map((s) => [s.id, s.created_by as string]),
+          spaces.filter((s) => !!s.created_by).map((s) => [s.id, s.created_by as string]),
         );
 
-        // directory views list spaces I hold a level on; a space that is
-        // only visible because it holds a task of mine belongs in My Work
-        const visibleSpaceIds = (spaces ?? []).filter((s) => !!access.spaces[s.id]).map((s) => s.id);
+        const visibleSpaceIds = spaces.filter((s) => !!access.spaces[s.id]).map((s) => s.id);
 
-        const { data, error } = visibleSpaceIds.length
-          ? await tasksDb.from("boards").select("id, name, space_id, sort_order").in("space_id", visibleSpaceIds).eq("is_archived", false).eq("is_template", false)
+        // ─── BATCH 2 (when no spaceId): fetch boards for visible spaces ───
+        const { data: boardsData, error: boardsError } = visibleSpaceIds.length
+          ? await tasksDb
+              .from("boards")
+              .select("id, name, space_id, sort_order")
+              .in("space_id", visibleSpaceIds)
+              .eq("is_archived", false)
+              .eq("is_template", false)
           : { data: [], error: null };
-        if (error) throw error;
-        boards = data ?? [];
+        if (boardsError) throw boardsError;
+        boards = boardsData ?? [];
       }
+
       const boardIds = boards.map((b) => b.id);
 
-      const { data: allTasks, error: tasksError } = boardIds.length
-        ? await tasksDb.from("tasks").select("*").in("board_id", boardIds).eq("is_archived", false)
-        : { data: [], error: null };
-      if (tasksError) throw tasksError;
-
-      // Every status of every set these tasks use — not only the statuses
-      // some task happens to be in right now. Otherwise a space whose tasks
-      // all sit in one status offered that single status in the dropdown.
-      // A row's own menu is narrowed to its board's set by DirectoryTaskRow
-      // (statuses carry their status_set_id).
-      const usedStatusIds = Array.from(new Set((allTasks ?? []).map((t) => t.status_id)));
-      const { data: usedStatusRows, error: usedStatusesError } = usedStatusIds.length
-        ? await tasksDb.from("statuses").select("*").in("id", usedStatusIds)
-        : { data: [], error: null };
-      if (usedStatusesError) throw usedStatusesError;
-      const statusSetIds = Array.from(new Set((usedStatusRows ?? []).map((s) => s.status_set_id)));
-      const { data: setStatusRows, error: setStatusesError } = statusSetIds.length
-        ? await tasksDb.from("statuses").select("*").in("status_set_id", statusSetIds).order("sort_order", { ascending: true })
-        : { data: [], error: null };
-      if (setStatusesError) throw setStatusesError;
-      // Whole sets first; anything a task uses that isn't in them (it shouldn't happen) is kept too.
-      const statusRows = [...(setStatusRows ?? [])];
-      for (const s of usedStatusRows ?? []) if (!statusRows.some((r) => r.id === s.id)) statusRows.push(s);
-
-      const tasks = allTasks ?? [];
+      // ─── BATCH 3: fetch all non-archived tasks in these boards (chunked to avoid huge URLs) ───
+      const tasksRes = await fetchInChunks<TaskRow>(boardIds, 80, (chunk) =>
+        tasksDb.from("tasks").select("*").in("board_id", chunk).eq("is_archived", false),
+      );
+      if (tasksRes.error) throw tasksRes.error;
+      const tasks = tasksRes.data;
       const taskIds = tasks.map((t) => t.id);
 
       const parentIds = Array.from(new Set(tasks.map((t) => t.parent_task_id).filter((id): id is string => !!id)));
       const projectIds = Array.from(new Set(tasks.map((t) => t.project_id).filter((id): id is string => !!id)));
       const zoneIds = Array.from(new Set(tasks.map((t) => t.zone_id).filter((id): id is string => !!id)));
 
+      const categoryByStatusId = new Map(statusRows.map((s) => [s.id, s.category]));
+
+      // ─── BATCH 4: fetch all task relationships concurrently with safe chunking ───
       const [
-        { data: assigneeRows, error: assigneeError },
-        { data: taskTypeRows, error: taskTypesError },
+        assigneeRowsRes,
         linksResult,
         dependencyResult,
         requirementsResult,
@@ -185,38 +251,37 @@ export function useTaskDirectory(options?: { spaceId?: string }) {
         projectRowsResult,
         zoneRowsResult,
       ] = await Promise.all([
-        taskIds.length
-          ? tasksDb.from("task_assignees").select("task_id, user_id").in("task_id", taskIds)
-          : Promise.resolve({ data: [], error: null }),
-        tasksDb.from("task_types").select("id, name, name_ar, color").order("name_ar"),
-        taskIds.length
-          ? tasksDb.from("task_links").select("task_id").in("task_id", taskIds)
-          : Promise.resolve({ data: [], error: null }),
-        loadDependencyFlags(taskIds, tasks, new Map(statusRows.map((s) => [s.id, s.category]))),
-        taskIds.length
-          ? tasksDb.from("task_requirements").select("task_id").in("task_id", taskIds).eq("is_satisfied", false)
-          : Promise.resolve({ data: [], error: null }),
-        taskIds.length
-          ? supabase.from("attachments").select("entity_id").eq("entity_type", "task").in("entity_id", taskIds)
-          : Promise.resolve({ data: [], error: null }),
-        taskIds.length
-          ? tasksDb.from("task_comments").select("task_id").in("task_id", taskIds)
-          : Promise.resolve({ data: [], error: null }),
-        taskIds.length
-          ? tasksDb.from("task_tags").select("task_id, tag_id").in("task_id", taskIds)
-          : Promise.resolve({ data: [], error: null }),
-        parentIds.length
-          ? tasksDb.from("tasks").select("id, title").in("id", parentIds)
-          : Promise.resolve({ data: [], error: null }),
-        projectIds.length
-          ? supabase.from("projects").select("id, name").in("id", projectIds)
-          : Promise.resolve({ data: [], error: null }),
-        zoneIds.length
-          ? supabase.schema("boq").from("zones").select("id, name").in("id", zoneIds)
-          : Promise.resolve({ data: [], error: null }),
+        fetchInChunks<{ task_id: string; user_id: string }>(taskIds, 100, (chunk) =>
+          tasksDb.from("task_assignees").select("task_id, user_id").in("task_id", chunk),
+        ),
+        fetchInChunks<{ task_id: string }>(taskIds, 100, (chunk) =>
+          tasksDb.from("task_links").select("task_id").in("task_id", chunk),
+        ),
+        loadDependencyFlags(taskIds, tasks, categoryByStatusId),
+        fetchInChunks<{ task_id: string }>(taskIds, 100, (chunk) =>
+          tasksDb.from("task_requirements").select("task_id").in("task_id", chunk).eq("is_satisfied", false),
+        ),
+        fetchInChunks<{ entity_id: string }>(taskIds, 100, (chunk) =>
+          supabase.from("attachments").select("entity_id").eq("entity_type", "task").in("entity_id", chunk),
+        ),
+        fetchInChunks<{ task_id: string }>(taskIds, 100, (chunk) =>
+          tasksDb.from("task_comments").select("task_id").in("task_id", chunk),
+        ),
+        fetchInChunks<{ task_id: string; tag_id: string }>(taskIds, 100, (chunk) =>
+          tasksDb.from("task_tags").select("task_id, tag_id").in("task_id", chunk),
+        ),
+        fetchInChunks<{ id: string; title: string }>(parentIds, 100, (chunk) =>
+          tasksDb.from("tasks").select("id, title").in("id", chunk),
+        ),
+        fetchInChunks<{ id: string; name: string }>(projectIds, 100, (chunk) =>
+          supabase.from("projects").select("id, name").in("id", chunk),
+        ),
+        fetchInChunks<{ id: string; name: string }>(zoneIds, 100, (chunk) =>
+          supabase.schema("boq").from("zones").select("id, name").in("id", chunk),
+        ),
       ]);
-      if (assigneeError) throw assigneeError;
-      if (taskTypesError) throw taskTypesError;
+
+      if (assigneeRowsRes.error) throw assigneeRowsRes.error;
       if (linksResult.error) throw linksResult.error;
       if (requirementsResult.error) throw requirementsResult.error;
       if (attachmentsResult.error) throw attachmentsResult.error;
@@ -226,15 +291,8 @@ export function useTaskDirectory(options?: { spaceId?: string }) {
       if (projectRowsResult.error) throw projectRowsResult.error;
       if (zoneRowsResult.error) throw zoneRowsResult.error;
 
-      const attachedTagIds = Array.from(new Set((taskTagsResult.data ?? []).map((r) => r.tag_id)));
-      const { data: tagRows, error: tagsError } = attachedTagIds.length
-        ? await tasksDb.from("tags").select("id, name, color").in("id", attachedTagIds)
-        : { data: [], error: null };
-      if (tagsError) throw tagsError;
-
-      const tagById = new Map((tagRows ?? []).map((t) => [t.id, t]));
       const tagsByTask = new Map<string, TagLite[]>();
-      for (const row of taskTagsResult.data ?? []) {
+      for (const row of taskTagsResult.data) {
         const tag = tagById.get(row.tag_id);
         if (!tag) continue;
         const list = tagsByTask.get(row.task_id) ?? [];
@@ -243,7 +301,7 @@ export function useTaskDirectory(options?: { spaceId?: string }) {
       }
 
       const assigneesByTask = new Map<string, string[]>();
-      for (const row of assigneeRows ?? []) {
+      for (const row of assigneeRowsRes.data) {
         const list = assigneesByTask.get(row.task_id) ?? [];
         list.push(row.user_id);
         assigneesByTask.set(row.task_id, list);
@@ -252,22 +310,22 @@ export function useTaskDirectory(options?: { spaceId?: string }) {
       const parentTitleByTask = new Map<string, string>();
       for (const t of tasks) {
         if (!t.parent_task_id) continue;
-        const parent = (parentRowsResult.data ?? []).find((p) => p.id === t.parent_task_id);
+        const parent = parentRowsResult.data.find((p) => p.id === t.parent_task_id);
         if (parent) parentTitleByTask.set(t.id, parent.title);
       }
 
       return {
         tasks,
-        statuses: statusRows ?? [],
+        statuses: statusRows,
         // Real values merged in by the `data` memo below.
         employeesById: new Map(),
         allEmployees: [],
         assigneesByTask,
-        taskTypes: new Map((taskTypeRows ?? []).map((t) => [t.id, t])),
+        taskTypes: new Map(taskTypeRows.map((t) => [t.id, t])),
         tagsByTask,
         parentTitleByTask,
-        projectNamesById: new Map((projectRowsResult.data ?? []).map((p) => [p.id, p.name])),
-        zoneNamesById: new Map((zoneRowsResult.data ?? []).map((z) => [z.id, z.name])),
+        projectNamesById: new Map(projectRowsResult.data.map((p) => [p.id, p.name])),
+        zoneNamesById: new Map(zoneRowsResult.data.map((z) => [z.id, z.name])),
         boardNamesById: new Map(boards.map((b) => [b.id, b.name])),
         boardOrderById: new Map(boards.map((b) => [b.id, b.sort_order])),
         spaceIdByBoardId: new Map(boards.map((b) => [b.id, b.space_id])),
@@ -277,7 +335,7 @@ export function useTaskDirectory(options?: { spaceId?: string }) {
             .map((b) => [b.id, spaceNamesById.get(b.space_id)] as const)
             .filter((pair): pair is readonly [string, string] => !!pair[1]),
         ),
-        linkedTaskIds: new Set((linksResult.data ?? []).map((r) => r.task_id)),
+        linkedTaskIds: new Set(linksResult.data.map((r) => r.task_id)),
         blockedTaskIds: dependencyResult.blockedTaskIds,
         dependencyFlags: dependencyResult.dependencyFlags,
         dependencyLinks: dependencyResult.dependencyLinks,
@@ -286,6 +344,10 @@ export function useTaskDirectory(options?: { spaceId?: string }) {
         attachedTaskIds: new Set((attachmentsResult.data ?? []).map((a) => a.entity_id)),
         commentedTaskIds: new Set((commentsResult.data ?? []).map((c) => c.task_id)),
       };
+      } catch (err) {
+        console.error("USE_TASK_DIRECTORY_FAIL:", err);
+        throw err;
+      }
     },
   });
 

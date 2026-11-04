@@ -12,6 +12,7 @@ import {
   FolderCog,
   ListTodo,
   History,
+  BarChart3,
 } from "lucide-react";
 import { ComponentType } from "react";
 import { useVisibleMenuItems } from "../hooks/permissions/useMenuPermissions";
@@ -86,6 +87,11 @@ const MainMenu = () => {
       icon: ListTodo,
       path: "/tasks",
       permission: "view_tasks_section",
+    },
+    {
+      label: "التحليلات ومؤشرات الأداء",
+      icon: BarChart3,
+      path: "/analytics",
     },
     {
       label: "الإعدادات",

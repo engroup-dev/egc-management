@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { permissionsDb } from "../../lib/permissionsDb";
 import { supabase } from "../../lib/supabaseClient";
+import { TIERS } from "../../lib/queryClient";
 import type {
   EffectivePermissionRow,
   GrantScope,
@@ -40,6 +41,7 @@ export function useEffectivePermissions(userId: string | undefined) {
   return useQuery<EffectivePermissionRow[]>({
     queryKey: effectivePermissionsKey(userId ?? "none"),
     enabled: Boolean(userId),
+    ...TIERS.E,
     queryFn: async () => {
       const { data, error } = await permissionsDb.rpc("effective_permissions", {
         p_user_id: userId as string,
@@ -87,6 +89,7 @@ export function useInheritedGrants(userId: string | undefined) {
   return useQuery<Record<string, InheritedGrant>>({
     queryKey: inheritedGrantsKey(userId ?? "none"),
     enabled: Boolean(userId),
+    ...TIERS.E,
     queryFn: async () => {
       const result: Record<string, InheritedGrant> = {};
 

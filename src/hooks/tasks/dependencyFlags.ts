@@ -60,7 +60,28 @@ export interface DependencyFlagsResult {
 
 const isFinished = (category: string | undefined) => category === "done" || category === "closed";
 
-const LINK_COLUMNS = "blocked_task_id, blocking_task_id, link_type, zone_chain";
+const LINK_COLUMNS = "blocked_task_id, blocking_task_id";
+
+async function fetchInChunks<T>(
+  ids: string[],
+  chunkSize: number,
+  fetchFn: (chunk: string[]) => PromiseLike<{ data: T[] | null; error: unknown }>
+): Promise<{ data: T[]; error: unknown }> {
+  if (ids.length === 0) return { data: [], error: null };
+  if (ids.length <= chunkSize) {
+    const res = await fetchFn(ids);
+    return { data: res.data ?? [], error: res.error };
+  }
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    chunks.push(ids.slice(i, i + chunkSize));
+  }
+  const results = await Promise.all(chunks.map(fetchFn));
+  for (const r of results) {
+    if (r.error) return { data: [], error: r.error };
+  }
+  return { data: results.flatMap((r) => r.data ?? []), error: null };
+}
 
 /**
  * @param taskIds the tasks being shown
@@ -83,18 +104,22 @@ export async function loadDependencyFlags(
   if (!taskIds.length) return empty;
 
   const [waitingResult, holdingResult] = await Promise.all([
-    tasksDb.from("task_dependencies").select(LINK_COLUMNS).in("blocked_task_id", taskIds),
-    tasksDb.from("task_dependencies").select(LINK_COLUMNS).in("blocking_task_id", taskIds),
+    fetchInChunks<DependencyPair>(taskIds, 100, (chunk) =>
+      tasksDb.from("task_dependencies").select(LINK_COLUMNS).in("blocked_task_id", chunk)
+    ),
+    fetchInChunks<DependencyPair>(taskIds, 100, (chunk) =>
+      tasksDb.from("task_dependencies").select(LINK_COLUMNS).in("blocking_task_id", chunk)
+    ),
   ]);
   if (waitingResult.error) throw waitingResult.error;
   if (holdingResult.error) throw holdingResult.error;
 
-  const dependencies = (waitingResult.data ?? []) as DependencyPair[];
+  const dependencies = waitingResult.data;
   const shown = new Set(taskIds);
   // a link between two shown tasks comes back from both queries
   const edges = [
     ...dependencies,
-    ...((holdingResult.data ?? []) as DependencyPair[]).filter((d) => !shown.has(d.blocked_task_id)),
+    ...holdingResult.data.filter((d) => !shown.has(d.blocked_task_id)),
   ];
   if (!edges.length) return { ...empty, dependencies };
 
@@ -103,9 +128,11 @@ export async function loadDependencyFlags(
     new Set(edges.flatMap((d) => [d.blocking_task_id, d.blocked_task_id]).filter((id) => !taskById.has(id))),
   );
   if (missingIds.length) {
-    const { data, error } = await tasksDb.from("tasks").select("id, title, status_id, is_archived, board_id").in("id", missingIds);
-    if (error) throw error;
-    for (const t of data ?? []) taskById.set(t.id, t);
+    const missingRes = await fetchInChunks<DependencyTaskInfo>(missingIds, 100, (chunk) =>
+      tasksDb.from("tasks").select("id, title, status_id, is_archived, board_id").in("id", chunk)
+    );
+    if (missingRes.error) throw missingRes.error;
+    for (const t of missingRes.data) taskById.set(t.id, t);
   }
 
   // other boards can use other status sets

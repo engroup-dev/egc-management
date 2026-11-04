@@ -160,8 +160,8 @@ export function useTaskDetail(taskId: string | undefined) {
         supabase.from("departments").select("id, name_ar, name").eq("is_active", true),
         tasksDb.from("task_links").select("*").eq("task_id", taskId),
         tasksDb.from("task_requirements").select("*").eq("task_id", taskId),
-        tasksDb.from("task_dependencies").select("id, blocking_task_id, link_type, zone_chain").eq("blocked_task_id", taskId),
-        tasksDb.from("task_dependencies").select("id, blocked_task_id, link_type, zone_chain").eq("blocking_task_id", taskId),
+        tasksDb.from("task_dependencies").select("id, blocking_task_id").eq("blocked_task_id", taskId),
+        tasksDb.from("task_dependencies").select("id, blocked_task_id").eq("blocking_task_id", taskId),
         tasksDb.from("checklists").select("*, checklist_items(*)").eq("task_id", taskId).order("sort_order"),
         tasksDb
           .from("tasks")
@@ -231,7 +231,7 @@ export function useTaskDetail(taskId: string | undefined) {
       const toDependencyRef = (
         id: string,
         dependencyId: string,
-        dep: { link_type: string; zone_chain: boolean },
+        dep?: { link_type?: string; zone_chain?: boolean },
       ): DependencyTaskRef | null => {
         const t = refTaskById.get(id);
         if (!t) return null;
@@ -241,8 +241,8 @@ export function useTaskDetail(taskId: string | undefined) {
           statusCategory: statusById.get(t.status_id)?.category ?? "not_started",
           dependencyId,
           otherBoard: t.board_id !== task.board_id,
-          startTogether: dep.link_type === "ss",
-          zoneChain: dep.zone_chain,
+          startTogether: dep?.link_type === "ss",
+          zoneChain: !!dep?.zone_chain,
         };
       };
 

@@ -126,9 +126,19 @@ Deno.serve(async (req) => {
   const expoAccessToken = Deno.env.get("EXPO_ACCESS_TOKEN");
   if (expoAccessToken) headers.Authorization = `Bearer ${expoAccessToken}`;
 
+  const isPenalty =
+    pushTitle.includes("غرامة") ||
+    pushTitle.includes("خصم") ||
+    pushBody.includes("غرامة") ||
+    pushBody.includes("خصم") ||
+    String((payloadData as Record<string, unknown>).type ?? "").includes("penalty") ||
+    String((payloadData as Record<string, unknown>).event_key ?? "").includes("penalty");
+
   const messages = (tokens as string[]).map((to) => ({
     to,
-    sound: "default",
+    sound: isPenalty ? "penalty_alert.wav" : "default",
+    channelId: isPenalty ? "penalties" : "default",
+    priority: isPenalty ? "high" : "default",
     title: pushTitle,
     body: pushBody,
     data: payloadData,

@@ -34,10 +34,16 @@ export const grantsKey = (layer: GrantLayer, ownerId: string) => [
 ];
 
 /** Every grant currently stored for one role / department / user. */
-export function useGrants(layer: GrantLayer, ownerId: string | undefined) {
+export function useGrants(
+  layer: GrantLayer,
+  ownerId: string | undefined,
+  options?: { initialData?: ExistingGrant[] },
+) {
   return useQuery<ExistingGrant[]>({
     queryKey: grantsKey(layer, ownerId ?? "none"),
     enabled: Boolean(ownerId),
+    initialData: options?.initialData,
+    staleTime: 60 * 1000,
     queryFn: async () => {
       const config = LAYERS[layer];
       const { data, error } = await permissionsDb

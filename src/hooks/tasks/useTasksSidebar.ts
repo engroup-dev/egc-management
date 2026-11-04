@@ -3,6 +3,7 @@ import { supabase } from "../../lib/supabaseClient";
 import type { Database } from "../../lib/supabase";
 import { useAuth } from "../useAuth";
 import { accessSignature, canSeeSpace, useMyTaskAccess } from "./useTaskAccess";
+import { TIERS } from "../../lib/queryClient";
 
 // =====================================================================
 // D1 sidebar data — one query, everything the sidebar chrome needs.
@@ -67,14 +68,20 @@ export function useTasksSidebar() {
   const query = useQuery({
     queryKey: ["tasks-sidebar", user?.id, accessSignature(access)],
     enabled: !!user?.id && !!access,
+    staleTime: TIERS.B.staleTime,
+    gcTime: TIERS.B.gcTime,
+    placeholderData: (prev) => prev,
     queryFn: async (): Promise<TasksSidebarData> => {
       if (!user?.id || !access) throw new Error("no authenticated user");
       const userId = user.id;
 
+      // 1. Fetch spaces, active departments, current user's task assignments,
+      // and all task statuses concurrently.
       const [
         { data: spaces, error: spacesError },
         { data: departmentRows, error: departmentsError },
         { data: assigneeRows, error: assigneeError },
+        { data: statuses, error: statusesError },
       ] = await Promise.all([
         tasksDb.from("spaces").select("*").eq("is_archived", false).eq("is_template", false),
         supabase
@@ -82,98 +89,111 @@ export function useTasksSidebar() {
           .select("id, name, name_ar")
           .eq("is_active", true),
         tasksDb.from("task_assignees").select("task_id").eq("user_id", userId),
+        tasksDb.from("statuses").select("id, category"),
       ]);
 
       if (spacesError) throw spacesError;
       if (departmentsError) throw departmentsError;
       if (assigneeError) throw assigneeError;
+      if (statusesError) throw statusesError;
+
+      const categoryByStatusId = new Map(
+        (statuses ?? []).map((s) => [s.id, s.category]),
+      );
 
       // Which spaces I see is decided by the database (tasks.my_access): a
       // level on the space, or a task of mine inside it. Not by `visibility`.
       const visibleSpaces = (spaces ?? []).filter((space) => canSeeSpace(access, space.id));
       const visibleSpaceIds = visibleSpaces.map((s) => s.id);
+      const myTaskIds = (assigneeRows ?? []).map((r) => r.task_id);
 
+      const projectIds = Array.from(
+        new Set(visibleSpaces.map((s) => s.project_id).filter((id): id is string => !!id)),
+      );
+
+      // 2. Fetch folders, boards, linked projects, and user's assigned tasks concurrently
       const [
         { data: folders, error: foldersError },
         { data: boards, error: boardsError },
-      ] =
+        { data: projectRows, error: projectsError },
+        { data: myTasksData, error: myTasksError },
+      ] = await Promise.all([
         visibleSpaceIds.length === 0
-          ? [{ data: [], error: null }, { data: [], error: null }]
-          : await Promise.all([
-              tasksDb
-                .from("folders")
-                .select("*")
-                .in("space_id", visibleSpaceIds)
-                .eq("is_archived", false),
-              tasksDb
-                .from("boards")
-                .select("*")
-                .in("space_id", visibleSpaceIds)
-                .eq("is_archived", false)
-                .eq("is_template", false),
-            ]);
+          ? Promise.resolve({ data: [] as FolderRow[], error: null })
+          : tasksDb
+              .from("folders")
+              .select("*")
+              .in("space_id", visibleSpaceIds)
+              .eq("is_archived", false),
+        visibleSpaceIds.length === 0
+          ? Promise.resolve({ data: [] as BoardRow[], error: null })
+          : tasksDb
+              .from("boards")
+              .select("*")
+              .in("space_id", visibleSpaceIds)
+              .eq("is_archived", false)
+              .eq("is_template", false),
+        projectIds.length === 0
+          ? Promise.resolve({ data: [] as { id: string; name: string }[], error: null })
+          : supabase.from("projects").select("id, name").in("id", projectIds),
+        myTaskIds.length === 0
+          ? Promise.resolve({ data: [] as { status_id: string }[], error: null })
+          : tasksDb
+              .from("tasks")
+              .select("status_id")
+              .in("id", myTaskIds)
+              .eq("is_archived", false)
+              .eq("is_template", false),
+      ]);
 
       if (foldersError) throw foldersError;
       if (boardsError) throw boardsError;
+      if (projectsError) throw projectsError;
+      if (myTasksError) throw myTasksError;
 
       const boardIds = (boards ?? []).map((b) => b.id);
-      const myTaskIds = (assigneeRows ?? []).map((r) => r.task_id);
+      const zoneIds = Array.from(new Set((boards ?? []).map((b) => b.zone_id).filter(Boolean))) as string[];
 
-      // (board_id, status_id, department_id) for every non-archived task
-      // on a visible board, plus every task assigned to me (which may sit
-      // on a board I can't otherwise see — the count should still count).
+      // 3. Fetch board tasks and zone names concurrently
+      const [
+        { data: boardTasksData, error: boardTasksError },
+        { data: zoneRows, error: zonesError },
+      ] = await Promise.all([
+        boardIds.length === 0
+          ? Promise.resolve({
+              data: [] as { board_id: string; status_id: string; department_id: string | null }[],
+              error: null,
+            })
+          : tasksDb
+              .from("tasks")
+              .select("board_id, status_id, department_id")
+              .in("board_id", boardIds)
+              .eq("is_archived", false),
+        zoneIds.length === 0
+          ? Promise.resolve({ data: [] as { id: string; name: string }[], error: null })
+          : supabase.schema("boq").from("zones").select("id, name").in("id", zoneIds),
+      ]);
+
+      if (boardTasksError) throw boardTasksError;
+      if (zonesError) throw zonesError;
+
+      const myOpenTaskStatusIds = (myTasksData ?? []).map((r) => r.status_id);
+
       const relevantTaskRows: { board_id: string; status_id: string }[] = [];
       const departmentTaskRows: {
         department_id: string | null;
         status_id: string;
       }[] = [];
 
-      if (boardIds.length > 0) {
-        const { data, error } = await tasksDb
-          .from("tasks")
-          .select("board_id, status_id, department_id")
-          .in("board_id", boardIds)
-          .eq("is_archived", false);
-        if (error) throw error;
-        for (const row of data ?? []) {
-          relevantTaskRows.push({
-            board_id: row.board_id,
-            status_id: row.status_id,
-          });
-          departmentTaskRows.push({
-            department_id: row.department_id,
-            status_id: row.status_id,
-          });
-        }
-      }
-
-      let myOpenTaskStatusIds: string[] = [];
-      if (myTaskIds.length > 0) {
-        const { data, error } = await tasksDb
-          .from("tasks")
-          .select("status_id")
-          .in("id", myTaskIds)
-          .eq("is_archived", false)
-          .eq("is_template", false);
-        if (error) throw error;
-        myOpenTaskStatusIds = (data ?? []).map((r) => r.status_id);
-      }
-
-      const allStatusIds = new Set<string>([
-        ...relevantTaskRows.map((r) => r.status_id),
-        ...myOpenTaskStatusIds,
-      ]);
-
-      let categoryByStatusId = new Map<string, StatusCategory>();
-      if (allStatusIds.size > 0) {
-        const { data: statuses, error: statusesError } = await tasksDb
-          .from("statuses")
-          .select("id, category")
-          .in("id", Array.from(allStatusIds));
-        if (statusesError) throw statusesError;
-        categoryByStatusId = new Map(
-          (statuses ?? []).map((s) => [s.id, s.category]),
-        );
+      for (const row of boardTasksData ?? []) {
+        relevantTaskRows.push({
+          board_id: row.board_id,
+          status_id: row.status_id,
+        });
+        departmentTaskRows.push({
+          department_id: row.department_id,
+          status_id: row.status_id,
+        });
       }
 
       const isOpen = (statusId: string) => {
@@ -200,21 +220,7 @@ export function useTasksSidebar() {
       }
 
       const myWorkCount = myOpenTaskStatusIds.filter(isOpen).length;
-
-      const zoneIds = Array.from(new Set((boards ?? []).map((b) => b.zone_id).filter(Boolean))) as string[];
-      const { data: zoneRows, error: zonesError } = zoneIds.length
-        ? await supabase.schema("boq").from("zones").select("id, name").in("id", zoneIds)
-        : { data: [], error: null };
-      if (zonesError) throw zonesError;
       const zoneNameById = new Map((zoneRows ?? []).map((z) => [z.id, z.name]));
-
-      const projectIds = Array.from(
-        new Set(visibleSpaces.map((s) => s.project_id).filter((id): id is string => !!id)),
-      );
-      const { data: projectRows, error: projectsError } = projectIds.length
-        ? await supabase.from("projects").select("id, name").in("id", projectIds)
-        : { data: [], error: null };
-      if (projectsError) throw projectsError;
       const projectNameById = new Map((projectRows ?? []).map((p) => [p.id, p.name]));
 
       const boardsWithCount: BoardWithCount[] = (boards ?? []).map((b) => ({
