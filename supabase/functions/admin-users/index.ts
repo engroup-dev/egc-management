@@ -167,12 +167,31 @@ Deno.serve(async (req) => {
           .from("roles").select("id").eq("id", roleId).maybeSingle();
         if (roleError) return reply(500, { error: "could not check the role" });
         if (!role) return reply(400, { error: "unknown role" });
+        // A role that can hand out access (Admin, Manager...) needs manage_roles,
+        // so create_employee alone can't create an Admin login.
+        const { data: privileged, error: privilegedError } = await admin
+          .rpc("sec_role_is_privileged", { p_role_id: roleId });
+        if (privilegedError) return reply(500, { error: "could not check the role" });
+        if (privileged && !(await can(userClient, "manage_roles"))) return reply(403, { error: "not allowed" });
         meta.roleId = roleId; meta.partyType = "company";
       }
 
-      const { data, error } = await admin.auth.admin.createUser({
-        email, password, email_confirm: true, user_metadata: meta,
+      // handle_new_user reads the role from this row, matched by the id chosen
+      // here. app_metadata can't carry it: the auth service saves app_metadata
+      // after the trigger has fired. Public sign-up can't choose its id.
+      const newUserId = crypto.randomUUID();
+      const { error: pendingError } = await admin.from("pending_account_roles").insert({
+        user_id: newUserId, role_id: meta.roleId, party_type: meta.partyType,
       });
+      if (pendingError) return reply(500, { error: "could not prepare the account" });
+
+      const { data, error } = await admin.auth.admin.createUser({
+        id: newUserId,
+        email, password, email_confirm: true, user_metadata: meta,
+        app_metadata: { roleId: meta.roleId, partyType: meta.partyType },
+      });
+      // Normally already consumed by the trigger. Clears it if the create failed.
+      await admin.from("pending_account_roles").delete().eq("user_id", newUserId);
       if (error || !data.user) {
         step("create failed", { status: error?.status ?? null });
         return reply(error?.status && error.status < 500 ? 400 : 500, {
@@ -192,7 +211,8 @@ Deno.serve(async (req) => {
       const { data: target, error: targetError } = await admin.auth.admin.getUserById(userId);
       if (targetError || !target?.user) return reply(404, { error: "user not found" });
 
-      const partyType = target.user.user_metadata?.partyType;
+      // app_metadata only the service role can set. Older logins only have user_metadata.
+      const partyType = target.user.app_metadata?.partyType ?? target.user.user_metadata?.partyType;
       const permission = partyType === "contractor" ? "manage_contractors"
         : partyType === "vendor" ? "manage_vendors" : null;
       if (!permission || !(await can(userClient, permission))) return reply(403, { error: "not allowed" });

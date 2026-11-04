@@ -2,7 +2,7 @@ import { z } from "zod";
 import { optionalNumber } from "../../utils/zodHelpers";
 import { emptyToUndefined } from "./helper.schema";
 
-const ENGINEERING_ROLE_ID = "212424d8-219a-4899-a24b-5d5bf05546e8"; // Engineer
+export const ENGINEERING_ROLE_ID = "212424d8-219a-4899-a24b-5d5bf05546e8"; // Engineer
 
 export const userSchema = z
   .object({
@@ -52,16 +52,12 @@ export const userSchema = z
     // decision is recorded in phase1-schema.sql and the guide's section
     // 4.1, and it is why this is a single id and not an array.
     //
-    // Optional here (we will enforce conditionally) — same pattern as
-    // specializationsId below. An employee with no department is still a
-    // valid employee in general; the column stays nullable for the 22
-    // existing staff with none. But issue #17: an Engineer with no
-    // department silently loses layer 4 of the ladder, so it's required
-    // for that role specifically.
+    // Optional here (we will enforce conditionally). An employee with no
+    // department is still a valid employee in general; the column stays
+    // nullable for the 22 existing staff with none. But issue #17: an
+    // Engineer with no department silently loses layer 4 of the ladder, so
+    // it's required for that role specifically.
     departmentId: z.preprocess(emptyToUndefined, z.string().optional()),
-
-    // ✅ make it optional here (we will enforce conditionally)
-    specializationsId: z.preprocess(emptyToUndefined, z.string().optional()),
 
     // Compensation & Payroll
     salaryType: z.enum(["fixed", "percentage"]),
@@ -92,14 +88,6 @@ export const userSchema = z
   })
   .superRefine((data, ctx) => {
     const isEngineering = data.roleId === ENGINEERING_ROLE_ID;
-
-    if (isEngineering && !data.specializationsId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["specializationsId"],
-        message: "يجب اختيار تخصص للمهندس",
-      });
-    }
 
     // Issue #17: department stays optional in general, but an Engineer
     // with none silently drops layer 4 of the permission ladder — so it's

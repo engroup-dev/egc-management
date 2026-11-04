@@ -276,19 +276,6 @@ export const createEmployee = async (data: UserFormValues) => {
     };
   }
 
-  // if engineer and speciality provided, insert into employee_specialities
-  if (roleToAssign === ENGINEER_ROLE_ID && data.specializationsId) {
-    const { error: specError } = await supabase
-      .from("employee_specialities")
-      .insert({
-        employee_id: userId,
-        speciality_id: data.specializationsId,
-      });
-    if (specError) {
-      console.warn("Warning inserting employee speciality:", specError);
-    }
-  }
-
   // insert employee files
   const { error: filesError } = await supabase
     .from("employee_documents")

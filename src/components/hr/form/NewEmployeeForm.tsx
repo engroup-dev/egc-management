@@ -1,6 +1,10 @@
 import { useState } from "react";
 import Button from "../../ui/Button";
-import { userSchema, UserFormValues } from "../../../types/schema/users.schema";
+import {
+  ENGINEERING_ROLE_ID,
+  userSchema,
+  UserFormValues,
+} from "../../../types/schema/users.schema";
 import { useForm, useWatch } from "react-hook-form";
 import type { Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -31,12 +35,9 @@ const NewEmployeeForm: React.FC<NewEmployeeFormProps> = ({
 }) => {
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const { specializations, roles, managers } = useUtils();
-  // Phase 1's departments table — the real one, not the role-scoped
-  // specializations list below it. The two are different things and this
-  // form now asks for both: a department decides what you may do
-  // (permission ladder layer 4), a specialization describes what you are
-  // trained in.
+  const { roles, managers } = useUtils();
+  // Phase 1's departments table. A department decides what you may do
+  // (permission ladder layer 4). Employees no longer pick a speciality.
   const { data: departments = [], isPending: departmentsLoading } =
     useDepartments();
   const navigate = useNavigate();
@@ -122,16 +123,8 @@ const NewEmployeeForm: React.FC<NewEmployeeFormProps> = ({
 
   const [currentStep, setCurrentStep] = useState(0);
 
-  // Watch selected role to show/filter specializations
   const selectedRoleId = watch("roleId");
-  const specializationsForSelectedRole = selectedRoleId
-    ? specializations.filter((s) => s.role_id === selectedRoleId)
-    : specializations;
   const selectedRole = roles.find((r) => r.id === selectedRoleId);
-  // show specializations only for roles that look like 'engineer' (accept small typo 'enger')
-  const showSpecializations = Boolean(
-    selectedRole && /engineer|enger/i.test(selectedRole.name || ""),
-  );
 
   // Use useWatch for real-time reactivity on firstName and lastName
   const personalPhotoUrl = useWatch({ control, name: "personalPhotoUrl" });
@@ -170,7 +163,6 @@ const NewEmployeeForm: React.FC<NewEmployeeFormProps> = ({
       "dateOfJoining",
       "managerId",
       "departmentId",
-      "specializationsId",
       "salaryType",
       "baseSalary",
       "bankName",
@@ -487,11 +479,14 @@ const NewEmployeeForm: React.FC<NewEmployeeFormProps> = ({
 
             {/* Department — permission ladder layer 4. Single-select by
                 design: one department per person (phase1-schema.sql).
-                Shown for every role, unlike specializations below, which
-                only apply to engineers. */}
+                Shown for every role; required for engineers (see userSchema). */}
             <SelectField
               id="departmentId"
-              label="القسم (اختياري)"
+              label={
+                selectedRoleId === ENGINEERING_ROLE_ID
+                  ? "القسم"
+                  : "القسم (اختياري)"
+              }
               options={[
                 { value: "", label: departmentsLoading ? "..." : "بدون قسم" },
                 ...departments.map((department) => ({
@@ -502,23 +497,6 @@ const NewEmployeeForm: React.FC<NewEmployeeFormProps> = ({
               register={register("departmentId")}
               error={errors.departmentId}
             />
-
-            {showSpecializations && (
-              <SelectField
-                id="specializationsId"
-                label="التخصصات (اختياري)"
-                options={
-                  specializationsForSelectedRole.length > 0
-                    ? specializationsForSelectedRole.map((spec) => ({
-                        value: spec.id,
-                        label: spec.name,
-                      }))
-                    : [{ value: "", label: "None" }]
-                }
-                register={register("specializationsId")}
-                error={errors.specializationsId}
-              />
-            )}
 
             <SelectField
               id="salaryType"
