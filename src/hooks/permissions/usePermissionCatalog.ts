@@ -29,7 +29,19 @@ export function usePermissionCatalog() {
         .order("name");
 
       if (error) throw error;
-      return (data ?? []) as PermissionCatalogRow[];
+      const rows = (data ?? []) as PermissionCatalogRow[];
+      if (!rows.some((r) => r.name === "view_analytics_section")) {
+        rows.push({
+          id: "view_analytics_section",
+          name: "view_analytics_section",
+          area: "Admin",
+          description: "دخول واستعراض قسم التحليلات ومؤشرات الأداء",
+          is_project_scoped: false,
+          parent_permission_id: null,
+          is_active: true,
+        });
+      }
+      return rows;
     },
   });
 }

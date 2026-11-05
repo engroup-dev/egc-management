@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  BarChart3,
   Building,
   DollarSign,
   LinkIcon,
@@ -23,6 +24,7 @@ export type ModuleId =
   | "crm"
   | "company"
   | "tasks"
+  | "analytics"
   | "settings";
 
 export type ActionCategory = "gate" | "view" | "create" | "edit" | "delete";
@@ -101,6 +103,13 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     gateNames: ["view_tasks_section"],
   },
   {
+    id: "analytics",
+    label: "التحليلات ومؤشرات الأداء",
+    subtitle: "المؤشرات التنفيذية، تحليل التكاليف، أداء المشاريع والمهام",
+    icon: BarChart3,
+    gateNames: ["view_analytics_section"],
+  },
+  {
     id: "settings",
     label: "الإعدادات وإدارة النظام",
     subtitle: "المستخدمون، الأدوار، الأقسام، البيانات المرجعية، والسجلات",
@@ -174,6 +183,9 @@ const EXPLICIT_MODULE_BY_PERMISSION: Record<string, ModuleId> = {
   view_task_dashboard: "tasks",
   view_task_performance: "tasks",
   view_task_logs: "tasks",
+
+  // Analytics
+  view_analytics_section: "analytics",
 
   // Projects & Execution
   view_projects: "projects",
@@ -384,6 +396,9 @@ const SHORT_PERMISSION_LABELS: Record<string, string> = {
   view_task_dashboard: "لوحة متابعة المهام",
   view_task_performance: "تقارير إنجاز المهام",
   view_task_logs: "سجلات حركات المهام",
+
+  // Analytics
+  view_analytics_section: "دخول قسم التحليلات ومؤشرات الأداء",
 
   // Settings
   view_settings_section: "دخول الإعدادات",

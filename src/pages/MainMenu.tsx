@@ -92,6 +92,7 @@ const MainMenu = () => {
       label: "التحليلات ومؤشرات الأداء",
       icon: BarChart3,
       path: "/analytics",
+      permission: "view_analytics_section",
     },
     {
       label: "الإعدادات",

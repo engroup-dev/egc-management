@@ -128,7 +128,13 @@ const AppRouter = () => {
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/profile/notifications" element={<NotificationSettingsPage />} />
               <Route path="/notifications" element={<NotificationsPage />} />
-              <Route path="/analytics" element={<AnalyticsPage />} />
+
+              {/* Analytics */}
+              <Route
+                element={<RequirePermission permission="view_analytics_section" />}
+              >
+                <Route path="/analytics" element={<AnalyticsPage />} />
+              </Route>
 
               {/* Settings */}
               <Route

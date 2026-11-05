@@ -411,16 +411,18 @@ export default function UserPermissionsPage() {
             }}
           />
         ) : activeTab === "mobile-builder" ? (
-          <MobileBuilderPermissionsTab
-            selectedUser={selectedUser}
-            allUsers={users ?? []}
-            onSelectUser={(u) => {
-              handleSelectUser(u);
-            }}
-            onSwitchToSystemPermissions={() => {
-              setActiveTab("person");
-            }}
-          />
+          <PermissionsErrorBoundary>
+            <MobileBuilderPermissionsTab
+              selectedUser={selectedUser}
+              allUsers={users ?? []}
+              onSelectUser={(u) => {
+                handleSelectUser(u);
+              }}
+              onSwitchToSystemPermissions={() => {
+                setActiveTab("person");
+              }}
+            />
+          </PermissionsErrorBoundary>
         ) : (
           <ProjectAccessMatrix
             onSelectUserForEdit={(u) => {

@@ -1,39 +1,37 @@
 import React, { useMemo, useState, useRef, useEffect } from "react";
 import {
   Building2,
+  Check,
   CheckCircle2,
-  CheckSquare,
+  ChevronDown,
+  Copy,
   DollarSign,
-  FileCheck2,
+  Eye,
   FileSignature,
   FileText,
   HardHat,
   Lock,
-  MapPin,
-  PhoneCall,
+  PackageOpen,
   Plus,
-  RotateCcw,
-  Save,
   Search,
   ShieldAlert,
-  ShieldCheck,
   ShoppingCart,
   Smartphone,
   Trash2,
-  Users,
-  Wallet,
+  TrendingUp,
+  User,
   X,
+  AlertTriangle,
 } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../hooks/useAuth";
 import type { PermissionUserSummary } from "../../hooks/permissions/useUserPermissionsAdmin";
-import { useAllProjectTeams } from "../../hooks/team/useAllProjectTeams";
+import { useAllProjectTeams, ProjectWithTeam } from "../../hooks/team/useAllProjectTeams";
 import { useProjectRolesAdmin } from "../../hooks/team/useProjectRolesAdmin";
 import { useAddTeamMember, useRemoveTeamMember } from "../../hooks/team/useTeamAssignments";
 import { usePermissionCatalog } from "../../hooks/permissions/usePermissionCatalog";
-import { useGrants, useSaveGrants } from "../../hooks/permissions/useGrants";
+import { permissionsDb } from "../../lib/permissionsDb";
 import type { GrantScope } from "../../types/permissions.types";
-import LoadingPage from "../ui/LoadingPage";
-import Button from "../ui/Button";
 
 interface Props {
   selectedUser: PermissionUserSummary | null;
@@ -42,49 +40,139 @@ interface Props {
   onSwitchToSystemPermissions?: () => void;
 }
 
-export interface MobileConfig {
-  mobile_enabled: boolean;
-  project_scope: GrantScope;
-  // الاتفاقيات والعقود
-  view_agreements: boolean;
-  edit_agreements: boolean;
-  // مقاولي الباطن والغرامات
-  site_penalties: boolean;
-  contractor_payments: boolean;
-  contractor_contacts: boolean;
-  // الخرائط والمخططات
-  view_drawings: boolean;
-  // المهام
-  view_tasks: boolean;
-  manage_tasks: boolean;
-  // الطلبات والمشتريات
-  material_requests: boolean;
-  review_orders: boolean;
-  // السرية المالية والراتب
-  view_project_finance: boolean;
-  view_own_salary: boolean;
-  updated_at?: string;
-  updated_by?: string;
+// =====================================================================
+// Defined 11 Project Rights matching the mobile UX
+// =====================================================================
+export interface ProjectRightItem {
+  id: string;
+  permName: string;
+  fallbackNames?: string[];
+  label: string;
+  description: string;
+  category: "site" | "procurement" | "finance";
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  defaultAllowed: boolean;
+  isSensitive?: boolean;
 }
 
-const DEFAULT_MOBILE_CONFIG: MobileConfig = {
-  mobile_enabled: true,
-  project_scope: "team_projects_only",
-  view_agreements: true,
-  edit_agreements: false, // افتراضياً معطلة للحماية
-  site_penalties: true,
-  contractor_payments: true,
-  contractor_contacts: true,
-  view_drawings: true,
-  view_tasks: true,
-  manage_tasks: true,
-  material_requests: true,
-  review_orders: false, // افتراضياً معطلة
-  view_project_finance: false, // افتراضياً معطلة لحماية سرية الأسعار
-  view_own_salary: true,
-};
+export const PROJECT_RIGHTS_CATALOG: ProjectRightItem[] = [
+  // 1. الميدان والتنفيذ (5)
+  {
+    id: "view_drawings",
+    permName: "view_project_maps",
+    fallbackNames: ["view_drawings"],
+    label: "الخرائط والمخططات",
+    description: "رفع الرسوم والمخططات من الهاتف",
+    category: "site",
+    icon: Eye,
+    defaultAllowed: true,
+  },
+  {
+    id: "view_tasks",
+    permName: "view_project_tasks",
+    fallbackNames: ["view_tasks"],
+    label: "استعراض مهام المشروع",
+    description: "رؤية قوائم المهام الميدانية",
+    category: "site",
+    icon: HardHat,
+    defaultAllowed: true,
+  },
+  {
+    id: "manage_tasks",
+    permName: "manage_project_tasks",
+    fallbackNames: ["manage_tasks"],
+    label: "إدارة وإغلاق المهام",
+    description: "تحديث نسب الإنجاز وإغلاق المهام",
+    category: "site",
+    icon: CheckCircle2,
+    defaultAllowed: true,
+  },
+  {
+    id: "manage_execution",
+    permName: "manage_execution",
+    label: "متابعة مراحل التنفيذ",
+    description: "جداول التنفيذ الفعلي بالموقع",
+    category: "site",
+    icon: Building2,
+    defaultAllowed: true,
+  },
+  {
+    id: "site_penalties",
+    permName: "create_contractor_penalty",
+    label: "المخالفات والغرامات",
+    description: "توثيق مخالفات مقاولي الباطن",
+    category: "site",
+    icon: ShieldAlert,
+    defaultAllowed: true,
+  },
 
-const NOTE_PREFIX = "[mobile_builder_cfg]";
+  // 2. التوريدات وطلبات المواد (2)
+  {
+    id: "material_requests",
+    permName: "view_project_orders",
+    fallbackNames: ["view_shop_orders"],
+    label: "رفع طلبات شراء المواد",
+    description: "إنشاء طلبات المواد من الموقع",
+    category: "procurement",
+    icon: ShoppingCart,
+    defaultAllowed: true,
+  },
+  {
+    id: "review_orders",
+    permName: "review_shop_order_prices",
+    fallbackNames: ["approve_order"],
+    label: "مراجعة وفحص الأسعار",
+    description: "فحص العروض واعتماد الاستلام",
+    category: "procurement",
+    icon: PackageOpen,
+    defaultAllowed: false,
+  },
+
+  // 3. العقود والمالية (4)
+  {
+    id: "view_agreements",
+    permName: "view_project_agreements",
+    fallbackNames: ["view_all_project_agreements"],
+    label: "استعراض عقود المقاولين",
+    description: "رؤية الاتفاقيات والبنود",
+    category: "finance",
+    icon: FileText,
+    defaultAllowed: true,
+    isSensitive: true,
+  },
+  {
+    id: "edit_agreements",
+    permName: "edit_project_agreements",
+    label: "تعديل اتفاقيات المقاولين",
+    description: "تحرير بنود عقود المقاولين",
+    category: "finance",
+    icon: FileSignature,
+    defaultAllowed: false,
+    isSensitive: true,
+  },
+  {
+    id: "contractor_payments",
+    permName: "view_contractor_payments",
+    fallbackNames: ["view_project_finance_income"],
+    label: "دفعات ومستخلصات المقاولين",
+    description: "مراجعة دفعات مقاولي المشروع",
+    category: "finance",
+    icon: TrendingUp,
+    defaultAllowed: false,
+    isSensitive: true,
+  },
+  {
+    id: "view_project_finance",
+    permName: "view_project_finance",
+    fallbackNames: ["print_project_expense_range"],
+    label: "تكاليف ومصروفات المشروع",
+    description: "المصروفات والميزانية الكلية للمشروع",
+    category: "finance",
+    icon: DollarSign,
+    defaultAllowed: false,
+    isSensitive: true,
+  },
+];
 
 export default function MobileBuilderPermissionsTab({
   selectedUser,
@@ -93,103 +181,54 @@ export default function MobileBuilderPermissionsTab({
   onSwitchToSystemPermissions,
 }: Props) {
   const { user: currentAuthUser } = useAuth();
+  const queryClient = useQueryClient();
 
-  // Search & engineer selection
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const searchContainerRef = useRef<HTMLDivElement>(null);
+  // Active Engineer (fallback to first user so screen is never blank)
+  const activeUser = useMemo(() => {
+    return selectedUser ?? allUsers[0] ?? null;
+  }, [selectedUser, allUsers]);
 
-  // Add project assignment
+  // User search/picker dropdown
+  const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
+  const [userSearchQuery, setUserSearchQuery] = useState("");
+  const userDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Selected project state
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+
+  // Project search in right sidebar
+  const [projectSearchQuery, setProjectSearchQuery] = useState("");
+
+  // Copy permissions modal/dropdown
+  const [isCopyDropdownOpen, setIsCopyDropdownOpen] = useState(false);
+  const copyDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Add project assignment modal
   const [isAddProjectOpen, setIsAddProjectOpen] = useState(false);
   const [selectedProjectIdToAdd, setSelectedProjectIdToAdd] = useState("");
   const [selectedRoleIdToAdd, setSelectedRoleIdToAdd] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
 
   // Toast feedback
-  const [toast, setToast] = useState<{
-    id: string;
-    title: string;
-    subtitle?: string;
-  } | null>(null);
-
+  const [toast, setToast] = useState<{ id: string; title: string; subtitle?: string } | null>(null);
   const showToast = (title: string, subtitle?: string) => {
     const id = Date.now().toString();
     setToast({ id, title, subtitle });
     setTimeout(() => {
       setToast((cur) => (cur?.id === id ? null : cur));
-    }, 3500);
+    }, 3200);
   };
 
   // Queries
-  const { data: allProjectsWithTeams, isLoading: projectsLoading } = useAllProjectTeams();
+  const { data: allProjectsWithTeams } = useAllProjectTeams();
   const { data: projectRolesAdmin } = useProjectRolesAdmin();
   const { data: catalog } = usePermissionCatalog();
 
   // Mutations
   const addTeamMember = useAddTeamMember();
   const removeTeamMember = useRemoveTeamMember();
-  const saveGrantsMutation = useSaveGrants();
 
-  // Project counts per user
-  const userProjectCountMap = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const p of allProjectsWithTeams ?? []) {
-      for (const m of p.members) {
-        if (m.userId) {
-          map.set(m.userId, (map.get(m.userId) ?? 0) + 1);
-        }
-        if (m.personId && m.personId !== m.userId) {
-          map.set(m.personId, (map.get(m.personId) ?? 0) + 1);
-        }
-      }
-    }
-    return map;
-  }, [allProjectsWithTeams]);
-
-  // Active user selection
-  const activeUser = useMemo(() => {
-    if (selectedUser) return selectedUser;
-    const withProj = allUsers.find(
-      (u) => (userProjectCountMap.get(u.id) ?? 0) > 0,
-    );
-    return withProj ?? allUsers[0] ?? null;
-  }, [selectedUser, allUsers, userProjectCountMap]);
-
-  // Read existing grants for active user
-  const { data: userGrants, isLoading: grantsLoading } = useGrants(
-    "user",
-    activeUser?.id,
-    { initialData: activeUser?.overrides },
-  );
-
-  // Close search dropdown on click outside
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (
-        searchContainerRef.current &&
-        !searchContainerRef.current.contains(e.target as Node)
-      ) {
-        setIsSearchOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  // Filtered engineers for autocomplete
-  const filteredUsers = useMemo(() => {
-    const term = searchQuery.trim().toLowerCase();
-    if (!term) return allUsers;
-    return allUsers.filter(
-      (u) =>
-        u.full_name.toLowerCase().includes(term) ||
-        (u.email ?? "").toLowerCase().includes(term) ||
-        (u.role_name ?? "").toLowerCase().includes(term) ||
-        (u.department_name ?? "").toLowerCase().includes(term),
-    );
-  }, [allUsers, searchQuery]);
-
-  // Map permissions from catalog
+  // Map permissions from catalog (name -> id)
   const permMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const p of catalog ?? []) {
@@ -198,1306 +237,1082 @@ export default function MobileBuilderPermissionsTab({
     return map;
   }, [catalog]);
 
-  // Derive initial MobileConfig from existing grants
-  const initialConfig = useMemo<MobileConfig>(() => {
-    if (!userGrants || userGrants.length === 0) {
-      return { ...DEFAULT_MOBILE_CONFIG };
-    }
-
-    // Check if there is an encoded JSON note
-    const noteGrant = userGrants.find(
-      (g) => g.note && g.note.includes(NOTE_PREFIX),
-    );
-    if (noteGrant && noteGrant.note) {
-      try {
-        const jsonStr = noteGrant.note.replace(NOTE_PREFIX, "").trim();
-        const parsed = JSON.parse(jsonStr);
-        return {
-          ...DEFAULT_MOBILE_CONFIG,
-          ...parsed,
-        };
-      } catch (err) {
-        console.warn("Could not parse mobile builder config from note", err);
-      }
-    }
-
-    // Infer from standard permission rows if no json note found
-    const findGrant = (name: string) => {
-      const pid = permMap.get(name);
-      if (!pid) return undefined;
-      return userGrants.find((g) => g.permission_id === pid);
-    };
-
-    const mobileAccessGate = findGrant("mobile_app_access");
-    const agreementsGrant = findGrant("view_project_agreements") || findGrant("view_all_project_agreements");
-    const editAgreementsGrant = findGrant("edit_project_agreements");
-    const penaltyGrant = findGrant("create_contractor_penalty");
-    const paymentsGrant = findGrant("view_contractor_payments");
-    const contactsGrant = findGrant("view_contractor_contacts");
-    const mapsGrant = findGrant("view_project_maps");
-    const viewTasksGrant = findGrant("view_project_tasks");
-    const manageTasksGrant = findGrant("manage_project_tasks");
-    const ordersGrant = findGrant("view_project_orders") || findGrant("view_shop_orders");
-    const reviewOrdersGrant = findGrant("review_shop_order_prices") || findGrant("approve_order");
-    const financeGrant = findGrant("view_project_finance");
-    const salaryGrant = findGrant("view_own_salary");
-
-    return {
-      mobile_enabled: mobileAccessGate ? mobileAccessGate.allowed : true,
-      project_scope: (agreementsGrant?.scope as GrantScope) || (mobileAccessGate?.scope as GrantScope) || "team_projects_only",
-      view_agreements: agreementsGrant ? agreementsGrant.allowed : true,
-      edit_agreements: editAgreementsGrant ? editAgreementsGrant.allowed : false,
-      site_penalties: penaltyGrant ? penaltyGrant.allowed : true,
-      contractor_payments: paymentsGrant ? paymentsGrant.allowed : true,
-      contractor_contacts: contactsGrant ? contactsGrant.allowed : true,
-      view_drawings: mapsGrant ? mapsGrant.allowed : true,
-      view_tasks: viewTasksGrant ? viewTasksGrant.allowed : true,
-      manage_tasks: manageTasksGrant ? manageTasksGrant.allowed : true,
-      material_requests: ordersGrant ? ordersGrant.allowed : true,
-      review_orders: reviewOrdersGrant ? reviewOrdersGrant.allowed : false,
-      view_project_finance: financeGrant ? financeGrant.allowed : false,
-      view_own_salary: salaryGrant ? salaryGrant.allowed : true,
-    };
-  }, [userGrants, permMap]);
-
-  // Local draft state
-  const [config, setConfig] = useState<MobileConfig>(DEFAULT_MOBILE_CONFIG);
-  const [isDirty, setIsDirty] = useState(false);
-
-  // Sync draft whenever active user or initialConfig changes
+  // Close dropdowns on outside click
   useEffect(() => {
-    setConfig(initialConfig);
-    setIsDirty(false);
-  }, [initialConfig, activeUser?.id]);
-
-  const updateConfig = <K extends keyof MobileConfig>(
-    key: K,
-    val: MobileConfig[K],
-  ) => {
-    setConfig((prev) => {
-      const next = { ...prev, [key]: val };
-      setIsDirty(true);
-      return next;
-    });
-  };
-
-  // Projects assigned to this user
-  const userAssignedProjects = useMemo(() => {
-    if (!activeUser) return [];
-    const list: {
-      projectId: string;
-      projectName: string;
-      serialNumber: number | null;
-      status: string | null;
-      assignmentId: string;
-      projectRoleName: string;
-      projectRoleId: string;
-    }[] = [];
-
-    for (const p of allProjectsWithTeams ?? []) {
-      for (const m of p.members) {
-        if (m.userId === activeUser.id || m.personId === activeUser.id) {
-          list.push({
-            projectId: p.projectId,
-            projectName: p.projectName,
-            serialNumber: p.serialNumber,
-            status: p.status,
-            assignmentId: m.assignmentId,
-            projectRoleName: m.projectRoleName,
-            projectRoleId: m.projectRoleId,
-          });
-        }
+    function handleClickOutside(e: MouseEvent) {
+      if (userDropdownRef.current && !userDropdownRef.current.contains(e.target as Node)) {
+        setIsUserDropdownOpen(false);
+      }
+      if (copyDropdownRef.current && !copyDropdownRef.current.contains(e.target as Node)) {
+        setIsCopyDropdownOpen(false);
       }
     }
-    return list;
-  }, [allProjectsWithTeams, activeUser]);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
-  // Projects not yet assigned to activeUser
-  const availableProjectsToAssign = useMemo(() => {
-    const assignedIds = new Set(userAssignedProjects.map((p) => p.projectId));
-    return (allProjectsWithTeams ?? []).filter(
-      (p) => !assignedIds.has(p.projectId),
+  // Filtered users for autocomplete
+  const filteredUsers = useMemo(() => {
+    const term = userSearchQuery.trim().toLowerCase();
+    if (!term) return allUsers;
+    return allUsers.filter(
+      (u) =>
+        (u.full_name || "").toLowerCase().includes(term) ||
+        (u.email ?? "").toLowerCase().includes(term) ||
+        (u.phone ?? "").toLowerCase().includes(term) ||
+        (u.role_name ?? "").toLowerCase().includes(term) ||
+        (u.department_name ?? "").toLowerCase().includes(term),
     );
-  }, [allProjectsWithTeams, userAssignedProjects]);
+  }, [allUsers, userSearchQuery]);
 
-  // Handle assigning project
-  const handleAssignProject = async () => {
-    if (!activeUser || !selectedProjectIdToAdd || !selectedRoleIdToAdd) {
-      setAddError("يرجى اختيار المشروع والدور المطلوب إسناده");
+  // Master Switch: Query user_permission_grants for mobile_app_access
+  const { data: userGlobalGrants, refetch: refetchGlobalGrants } = useQuery({
+    queryKey: ["user-global-grants-mobile", activeUser?.id],
+    enabled: Boolean(activeUser?.id),
+    queryFn: async () => {
+      const { data, error } = await permissionsDb
+        .from("user_permission_grants")
+        .select("permission_id, allowed, scope")
+        .eq("user_id", activeUser!.id);
+      if (error) throw error;
+      return (data ?? []) as { permission_id: string; allowed: boolean; scope: GrantScope }[];
+    },
+  });
+
+  const isMobileAccessAllowed = useMemo(() => {
+    const mobilePermId = permMap.get("mobile_app_access");
+    if (!mobilePermId || !userGlobalGrants) return true; // Default allowed
+    const grant = userGlobalGrants.find((g) => g.permission_id === mobilePermId);
+    return grant ? grant.allowed : true;
+  }, [userGlobalGrants, permMap]);
+
+  // Toggle master phone access
+  const handleToggleMasterAccess = async () => {
+    if (!activeUser) return;
+    const mobilePermId = permMap.get("mobile_app_access");
+    if (!mobilePermId) {
+      console.warn("mobile_app_access permission not found in catalog");
       return;
     }
-    setAddError(null);
+
+    const newVal = !isMobileAccessAllowed;
     try {
-      await addTeamMember.mutateAsync({
-        projectId: selectedProjectIdToAdd,
-        personId: activeUser.id,
-        personType: "employee",
-        projectRoleId: selectedRoleIdToAdd,
-      });
-      setSelectedProjectIdToAdd("");
-      setSelectedRoleIdToAdd("");
-      setIsAddProjectOpen(false);
+      const { error } = await permissionsDb
+        .from("user_permission_grants")
+        .upsert(
+          {
+            user_id: activeUser.id,
+            permission_id: mobilePermId,
+            allowed: newVal,
+            scope: "all_projects",
+            granted_by: currentAuthUser?.id ?? null,
+            granted_at: new Date().toISOString(),
+            note: newVal ? "تفعيل الدخول لتطبيق الهاتف" : "حظر الدخول لتطبيق الهاتف",
+          } as never,
+          { onConflict: "user_id,permission_id" },
+        );
+
+      if (error) throw error;
+      await refetchGlobalGrants();
+      queryClient.invalidateQueries({ queryKey: ["effective-permissions"] });
       showToast(
-        "تم إسناد المشروع بنجاح",
-        "سيظهر هذا المشروع فوراً للمهندس في تطبيق الهاتف.",
+        newVal ? "تم تفعيل دخول تطبيق الهاتف" : "تم حظر دخول تطبيق الهاتف",
+        activeUser.full_name,
       );
     } catch (err) {
-      setAddError(
-        err instanceof Error ? err.message : "حدث خطأ أثناء إسناد المشروع",
-      );
+      console.error("Error toggling mobile access:", err);
+      showToast("فشل تحديث حالة دخول الهاتف");
     }
   };
 
-  // Handle removing assigned project
-  const handleRemoveProject = async (
-    assignmentId: string,
-    projectId: string,
-    projectName: string,
-  ) => {
-    if (!activeUser) return;
-    if (
-      !confirm(
-        `هل أنت متأكد من إزالة صلاحية متابعة مشروع "${projectName}" من هاتف ${activeUser.full_name}؟`,
-      )
-    ) {
-      return;
+  // Query team_member_permission_grants for active user across projects
+  const { data: teamMemberGrants, refetch: refetchTeamGrants } = useQuery({
+    queryKey: ["user-tm-grants", activeUser?.id],
+    enabled: Boolean(activeUser?.id),
+    queryFn: async () => {
+      const { data, error } = await permissionsDb
+        .from("team_member_permission_grants")
+        .select("project_id, permission_id, allowed, note")
+        .eq("user_id", activeUser!.id);
+      if (error) throw error;
+      return (data ?? []) as {
+        project_id: string;
+        permission_id: string;
+        allowed: boolean;
+        note: string | null;
+      }[];
+    },
+  });
+
+  // Fast map: `${projectId}:${permissionId}` -> allowed
+  const teamGrantMap = useMemo(() => {
+    const map = new Map<string, boolean>();
+    for (const g of teamMemberGrants ?? []) {
+      map.set(`${g.project_id}:${g.permission_id}`, g.allowed);
     }
-    try {
-      await removeTeamMember.mutateAsync({
-        assignmentId,
-        personType: "employee",
-        projectId,
-        personId: activeUser.id,
-        projectRoleId: "",
-      });
-      showToast("تمت إزالة المشروع من الهاتف", `المشروع: ${projectName}`);
-    } catch (err) {
-      alert(
-        err instanceof Error ? err.message : "حدث خطأ أثناء إزالة المشروع",
-      );
-    }
-  };
+    return map;
+  }, [teamMemberGrants]);
 
-  // Save changes to Supabase
-  const handleSave = async () => {
-    if (!activeUser) return;
+  // Assigned projects for this engineer
+  const assignedProjects = useMemo(() => {
+    if (!allProjectsWithTeams || !activeUser) return [];
 
-    const notePayload = `${NOTE_PREFIX} ${JSON.stringify({
-      ...config,
-      updated_at: new Date().toISOString(),
-      updated_by: currentAuthUser?.id ?? "super-admin",
-    })}`;
-
-    // Permissions we govern
-    const permTargets: {
-      name: string;
-      allowed: boolean;
-      scope: GrantScope;
-    }[] = [
-      {
-        name: "mobile_app_access",
-        allowed: config.mobile_enabled,
-        scope: "all_projects",
-      },
-      // Agreements
-      {
-        name: "view_project_agreements",
-        allowed: config.mobile_enabled && config.view_agreements,
-        scope: config.project_scope,
-      },
-      {
-        name: "view_all_project_agreements",
-        allowed: config.mobile_enabled && config.view_agreements,
-        scope: config.project_scope,
-      },
-      {
-        name: "edit_project_agreements",
-        allowed: config.mobile_enabled && config.edit_agreements,
-        scope: config.project_scope,
-      },
-      // Penalties
-      {
-        name: "create_contractor_penalty",
-        allowed: config.mobile_enabled && config.site_penalties,
-        scope: config.project_scope,
-      },
-      // Payments
-      {
-        name: "view_contractor_payments",
-        allowed: config.mobile_enabled && config.contractor_payments,
-        scope: config.project_scope,
-      },
-      {
-        name: "view_all_payments",
-        allowed: config.mobile_enabled && config.contractor_payments,
-        scope: "all_projects",
-      },
-      {
-        name: "view_payments",
-        allowed: config.mobile_enabled && config.contractor_payments,
-        scope: "all_projects",
-      },
-      // Contacts
-      {
-        name: "view_contractor_contacts",
-        allowed: config.mobile_enabled && config.contractor_contacts,
-        scope: config.project_scope,
-      },
-      // Maps
-      {
-        name: "view_project_maps",
-        allowed: config.mobile_enabled && config.view_drawings,
-        scope: config.project_scope,
-      },
-      // Tasks
-      {
-        name: "view_project_tasks",
-        allowed: config.mobile_enabled && config.view_tasks,
-        scope: config.project_scope,
-      },
-      {
-        name: "manage_project_tasks",
-        allowed: config.mobile_enabled && config.manage_tasks,
-        scope: config.project_scope,
-      },
-      // Orders
-      {
-        name: "view_project_orders",
-        allowed: config.mobile_enabled && config.material_requests,
-        scope: config.project_scope,
-      },
-      {
-        name: "view_shop_orders",
-        allowed: config.mobile_enabled && config.material_requests,
-        scope: "all_projects",
-      },
-      {
-        name: "review_shop_order_prices",
-        allowed: config.mobile_enabled && config.review_orders,
-        scope: "all_projects",
-      },
-      {
-        name: "approve_order",
-        allowed: config.mobile_enabled && config.review_orders,
-        scope: config.project_scope,
-      },
-      // Finance & Salary
-      {
-        name: "view_project_finance",
-        allowed: config.mobile_enabled && config.view_project_finance,
-        scope: config.project_scope,
-      },
-      {
-        name: "view_own_salary",
-        allowed: config.mobile_enabled && config.view_own_salary,
-        scope: "all_projects",
-      },
-    ];
-
-    const upserts: {
-      permission_id: string;
-      allowed: boolean;
-      scope: GrantScope;
-      note?: string | null;
+    const list: {
+      project: ProjectWithTeam;
+      assignmentRoleName: string;
+      projectSerialNumber: string;
     }[] = [];
 
-    for (const item of permTargets) {
-      const pid = permMap.get(item.name);
-      if (pid) {
-        upserts.push({
-          permission_id: pid,
-          allowed: item.allowed,
-          scope: item.scope,
-          note: item.name === "mobile_app_access" ? notePayload : null,
+    for (const p of allProjectsWithTeams) {
+      const member = (p.members ?? []).find((m) => m.userId === activeUser.id);
+      if (member) {
+        list.push({
+          project: p,
+          assignmentRoleName: member.projectRoleName || "عضو فريق",
+          projectSerialNumber:
+            p.serialNumber !== null && p.serialNumber !== undefined
+              ? `#${p.serialNumber}`
+              : `#${p.projectId.slice(0, 4)}`,
         });
       }
     }
 
+    return list.sort((a, b) =>
+      (a.project.projectName || "").localeCompare(b.project.projectName || "", "ar"),
+    );
+  }, [allProjectsWithTeams, activeUser]);
+
+  // Set active project if not set or invalid
+  useEffect(() => {
+    if (assignedProjects.length > 0) {
+      if (!activeProjectId || !assignedProjects.some((p) => p.project.projectId === activeProjectId)) {
+        setActiveProjectId(assignedProjects[0].project.projectId);
+      }
+    } else {
+      setActiveProjectId(null);
+    }
+  }, [assignedProjects, activeProjectId]);
+
+  const activeProjectObj = useMemo(() => {
+    return assignedProjects.find((p) => p.project.projectId === activeProjectId) ?? null;
+  }, [assignedProjects, activeProjectId]);
+
+  // Available projects to add to this engineer
+  const availableProjectsToAdd = useMemo(() => {
+    if (!allProjectsWithTeams) return [];
+    const assignedIds = new Set(assignedProjects.map((p) => p.project.projectId));
+    return allProjectsWithTeams
+      .filter((p) => !assignedIds.has(p.projectId))
+      .sort((a, b) => (a.projectName || "").localeCompare(b.projectName || "", "ar"));
+  }, [allProjectsWithTeams, assignedProjects]);
+
+  // Check if a right is allowed on a specific project
+  const checkRight = (projectId: string, right: ProjectRightItem): boolean => {
+    const permId = permMap.get(right.permName);
+    if (permId) {
+      const val = teamGrantMap.get(`${projectId}:${permId}`);
+      if (val !== undefined) return val;
+    }
+
+    if (right.fallbackNames) {
+      for (const fallback of right.fallbackNames) {
+        const fallbackId = permMap.get(fallback);
+        if (fallbackId) {
+          const val = teamGrantMap.get(`${projectId}:${fallbackId}`);
+          if (val !== undefined) return val;
+        }
+      }
+    }
+
+    return right.defaultAllowed;
+  };
+
+  // Calculate active permission count for any project
+  const getActiveCountForProject = (projectId: string) => {
+    let count = 0;
+    for (const r of PROJECT_RIGHTS_CATALOG) {
+      if (checkRight(projectId, r)) count++;
+    }
+    return count;
+  };
+
+  // Toggle single right on active project
+  const handleToggleRight = async (right: ProjectRightItem) => {
+    if (!activeUser || !activeProjectId) return;
+    const permId = permMap.get(right.permName) ?? (right.fallbackNames ? permMap.get(right.fallbackNames[0]) : null);
+    if (!permId) {
+      console.warn("Permission not found in catalog:", right.permName);
+      return;
+    }
+
+    const currentVal = checkRight(activeProjectId, right);
+    const newVal = !currentVal;
+
     try {
-      await saveGrantsMutation.mutateAsync({
-        level: "user",
-        ownerId: activeUser.id,
-        upserts,
-        deletes: [],
-      });
-      setIsDirty(false);
+      const { error } = await permissionsDb
+        .from("team_member_permission_grants")
+        .upsert(
+          {
+            project_id: activeProjectId,
+            user_id: activeUser.id,
+            permission_id: permId,
+            allowed: newVal,
+            granted_by: currentAuthUser?.id ?? null,
+            granted_at: new Date().toISOString(),
+          } as never,
+          { onConflict: "project_id,user_id,permission_id" },
+        );
+
+      if (error) throw error;
+
+      await refetchTeamGrants();
+      queryClient.invalidateQueries({ queryKey: ["matrix-tm-grants"] });
+      queryClient.invalidateQueries({ queryKey: ["effective-permissions"] });
+
       showToast(
-        "تم حفظ وتطبيق صلاحيات الهاتف بنجاح",
-        `تمت مزامنة صلاحيات المهندس (${activeUser.full_name}) فورياً مع تطبيق الهاتف.`,
+        `${right.label}: ${newVal ? "تم التفعيل ✓" : "تم التعطيل ✕"}`,
+        activeProjectObj?.project.projectName || activeProjectId,
       );
     } catch (err) {
-      alert(
-        err instanceof Error ? err.message : "فشل في حفظ صلاحيات تطبيق الهاتف",
+      console.error("Error toggling project permission:", err);
+      showToast("حدث خطأ أثناء حفظ الصلاحية");
+    }
+  };
+
+  // Toggle category batch
+  const handleToggleCategory = async (category: "site" | "procurement" | "finance", targetAllowed: boolean) => {
+    if (!activeUser || !activeProjectId) return;
+
+    const catRights = PROJECT_RIGHTS_CATALOG.filter((r) => r.category === category);
+    try {
+      const rows = catRights.map((right) => {
+        const permId = permMap.get(right.permName) ?? (right.fallbackNames ? permMap.get(right.fallbackNames[0]) : null);
+        return {
+          project_id: activeProjectId,
+          user_id: activeUser.id,
+          permission_id: permId || right.permName,
+          allowed: targetAllowed,
+          granted_by: currentAuthUser?.id ?? null,
+          granted_at: new Date().toISOString(),
+        };
+      }).filter((r) => Boolean(r.permission_id));
+
+      const { error } = await permissionsDb
+        .from("team_member_permission_grants")
+        .upsert(rows as never, { onConflict: "project_id,user_id,permission_id" });
+
+      if (error) throw error;
+
+      await refetchTeamGrants();
+      queryClient.invalidateQueries({ queryKey: ["matrix-tm-grants"] });
+      queryClient.invalidateQueries({ queryKey: ["effective-permissions"] });
+
+      showToast(
+        targetAllowed ? "تم تفعيل صلاحيات القسم" : "تم إلغاء صلاحيات القسم",
+        activeProjectObj?.project.projectName,
       );
+    } catch (err) {
+      console.error("Error batch updating category permissions:", err);
+      showToast("فشل تحديث الصلاحيات");
     }
   };
 
-  // Instant Revoke Mobile Access
-  const handleImmediateLockout = () => {
-    if (!activeUser) return;
-    if (
-      confirm(
-        `هل تريد حظر وتعطيل دخول المهندس (${activeUser.full_name}) لتطبيق الهاتف فوراً؟`,
-      )
-    ) {
-      updateConfig("mobile_enabled", false);
+  // Copy permissions from another project
+  const handleCopyPermissionsFrom = async (sourceProjectId: string) => {
+    if (!activeUser || !activeProjectId || sourceProjectId === activeProjectId) return;
+
+    const sourceProject = assignedProjects.find((p) => p.project.projectId === sourceProjectId);
+    if (!sourceProject) return;
+
+    try {
+      const rowsToCopy = PROJECT_RIGHTS_CATALOG.map((right) => {
+        const sourceAllowed = checkRight(sourceProjectId, right);
+        const permId = permMap.get(right.permName) ?? (right.fallbackNames ? permMap.get(right.fallbackNames[0]) : null);
+        return {
+          project_id: activeProjectId,
+          user_id: activeUser.id,
+          permission_id: permId || right.permName,
+          allowed: sourceAllowed,
+          granted_by: currentAuthUser?.id ?? null,
+          granted_at: new Date().toISOString(),
+        };
+      }).filter((r) => Boolean(r.permission_id));
+
+      const { error } = await permissionsDb
+        .from("team_member_permission_grants")
+        .upsert(rowsToCopy as never, { onConflict: "project_id,user_id,permission_id" });
+
+      if (error) throw error;
+
+      await refetchTeamGrants();
+      queryClient.invalidateQueries({ queryKey: ["matrix-tm-grants"] });
+      queryClient.invalidateQueries({ queryKey: ["effective-permissions"] });
+      setIsCopyDropdownOpen(false);
+
+      showToast(
+        `تم نسخ الصلاحيات من ${sourceProject.project.projectName} بنجاح ✓`,
+        activeProjectObj?.project.projectName,
+      );
+    } catch (err) {
+      console.error("Error copying project permissions:", err);
+      showToast("فشل نسخ الصلاحيات");
     }
   };
 
-  // Reset to default
-  const handleReset = () => {
-    setConfig({ ...DEFAULT_MOBILE_CONFIG });
-    setIsDirty(true);
-  };
+  // Remove project assignment
+  const handleRemoveProject = async () => {
+    if (!activeUser || !activeProjectId || !activeProjectObj) return;
 
-  if (projectsLoading || (grantsLoading && !userGrants)) {
-    return <LoadingPage label="جاري تحميل صلاحيات تطبيق الهاتف ومشاريع المهندس..." />;
-  }
-
-  if (!activeUser) {
-    return (
-      <div className="bg-white rounded-xl border border-gray-200 p-12 text-center shadow-sm">
-        <Smartphone size={36} className="mx-auto text-gray-300 mb-3" />
-        <p className="text-base font-semibold text-gray-700">
-          لم يتم العثور على مستخدمين
-        </p>
-      </div>
+    const confirmed = window.confirm(
+      `هل أنت متأكد من إلغاء إسناد مشروع "${activeProjectObj.project.projectName}" عن ${activeUser.full_name}؟`,
     );
-  }
+    if (!confirmed) return;
+
+    try {
+      await removeTeamMember.mutateAsync({
+        projectId: activeProjectId,
+        userId: activeUser.id,
+      });
+
+      // Clean up grants
+      await permissionsDb
+        .from("team_member_permission_grants")
+        .delete()
+        .eq("project_id", activeProjectId)
+        .eq("user_id", activeUser.id);
+
+      await refetchTeamGrants();
+      queryClient.invalidateQueries({ queryKey: ["all-project-teams"] });
+
+      showToast("تم إلغاء إسناد المشروع بنجاح", activeProjectObj.project.projectName);
+    } catch (err) {
+      console.error("Error removing team member:", err);
+      showToast("فشل إلغاء إسناد المشروع");
+    }
+  };
+
+  // Add project assignment
+  const handleAssignProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeUser || !selectedProjectIdToAdd || !selectedRoleIdToAdd) {
+      setAddError("يرجى اختيار المشروع والدور أولاً");
+      return;
+    }
+
+    setAddError(null);
+    try {
+      await addTeamMember.mutateAsync({
+        projectId: selectedProjectIdToAdd,
+        userId: activeUser.id,
+        projectRoleId: selectedRoleIdToAdd,
+      });
+
+      await queryClient.invalidateQueries({ queryKey: ["all-project-teams"] });
+      setActiveProjectId(selectedProjectIdToAdd);
+      setIsAddProjectOpen(false);
+      setSelectedProjectIdToAdd("");
+      setSelectedRoleIdToAdd("");
+
+      showToast("تم إسناد المشروع للمهندس بنجاح ✓");
+    } catch (err) {
+      console.error("Error assigning project:", err);
+      setAddError(err instanceof Error ? err.message : "فشل إسناد المشروع");
+    }
+  };
+
+  // Filter projects by search query in right sidebar
+  const filteredAssignedProjects = useMemo(() => {
+    const q = projectSearchQuery.trim().toLowerCase();
+    if (!q) return assignedProjects;
+    return assignedProjects.filter(
+      (p) =>
+        (p.project.projectName || "").toLowerCase().includes(q) ||
+        p.projectSerialNumber.toLowerCase().includes(q) ||
+        p.assignmentRoleName.toLowerCase().includes(q),
+    );
+  }, [assignedProjects, projectSearchQuery]);
+
+  // Counts for active project
+  const activeProjectCounts = useMemo(() => {
+    if (!activeProjectId) return { total: 11, allowed: 0, percent: 0, site: 0, proc: 0, fin: 0 };
+    const allowed = getActiveCountForProject(activeProjectId);
+    const site = PROJECT_RIGHTS_CATALOG.filter((r) => r.category === "site" && checkRight(activeProjectId, r)).length;
+    const proc = PROJECT_RIGHTS_CATALOG.filter((r) => r.category === "procurement" && checkRight(activeProjectId, r)).length;
+    const fin = PROJECT_RIGHTS_CATALOG.filter((r) => r.category === "finance" && checkRight(activeProjectId, r)).length;
+    return {
+      total: 11,
+      allowed,
+      percent: Math.min(100, Math.max(0, Math.round((allowed / 11) * 100))) || 0,
+      site,
+      proc,
+      fin,
+    };
+  }, [activeProjectId, teamGrantMap]);
 
   return (
-    <div dir="rtl" className="space-y-5">
+    <div className="space-y-4" dir="rtl">
       {/* Toast Notification */}
       {toast && (
-        <div className="fixed bottom-6 left-6 z-50 flex items-start gap-3 bg-gray-900 text-white px-4 py-3 rounded-xl shadow-xl border border-gray-700 max-w-md animate-fade-in">
-          <CheckCircle2 size={20} className="text-emerald-400 shrink-0 mt-0.5" />
-          <div className="space-y-0.5">
-            <h4 className="text-xs font-bold">{toast.title}</h4>
-            {toast.subtitle && (
-              <p className="text-[11px] text-gray-300">{toast.subtitle}</p>
-            )}
+        <div className="fixed bottom-6 left-6 z-50 flex items-center gap-3 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl border border-slate-700 animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
+          <div className="text-xs">
+            <div className="font-semibold">{toast.title}</div>
+            {toast.subtitle && <div className="text-slate-400 text-[11px] mt-0.5">{toast.subtitle}</div>}
           </div>
         </div>
       )}
 
-      {/* Engineer Search / Header Banner */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-xs space-y-4">
-        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-primary to-primary-dark text-white flex items-center justify-center font-bold text-lg shadow-sm">
-              {activeUser.full_name.slice(0, 2)}
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-gray-900">
-                  {activeUser.full_name}
-                </h2>
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-primary-superLight/60 text-primary-dark font-medium border border-primary/20">
-                  {activeUser.role_name || "مهندس / موظف"}
-                </span>
-                {config.mobile_enabled ? (
-                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200 inline-flex items-center gap-1">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    مصرّح له بالهاتف
-                  </span>
-                ) : (
-                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-red-50 text-red-700 font-semibold border border-red-200 inline-flex items-center gap-1">
-                    <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-                    ممنوع من الهاتف
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-gray-500 mt-1 flex items-center gap-2">
-                <span>{activeUser.department_name || "القسم العام"}</span>
-                <span>•</span>
-                <span>{activeUser.email || "بدون بريد إلكتروني"}</span>
-                {activeUser.phone && (
-                  <>
-                    <span>•</span>
-                    <span dir="ltr">{activeUser.phone}</span>
-                  </>
-                )}
-              </p>
-              {onSwitchToSystemPermissions && (
-                <button
-                  type="button"
-                  onClick={onSwitchToSystemPermissions}
-                  className="text-xs text-primary hover:underline font-medium inline-block mt-1"
-                >
-                  التبديل إلى صلاحيات النظام الشاملة &larr;
-                </button>
-              )}
-            </div>
+      {/* =====================================================================
+          TOP HEADER BAR
+          - Right: Prominent, Clearly Clickable Engineer Selector
+          - Left: Master Switch "دخول تطبيق الهاتف"
+         ===================================================================== */}
+      <div className="bg-white rounded-xl border border-slate-200 px-5 py-3.5 shadow-sm flex flex-wrap items-center justify-between gap-4">
+        {/* Right side: Prominent Engineer Picker */}
+        <div className="relative" ref={userDropdownRef}>
+          <div className="text-[11px] font-bold text-slate-500 mb-1 flex items-center gap-1.5">
+            <User size={13} className="text-blue-600" />
+            <span>المهندس أو الموظف المحدد:</span>
+            <span className="text-blue-700 font-semibold text-[10px] bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+              اضغط هنا لاختيار مهندس آخر ▾
+            </span>
           </div>
 
-          {/* Autocomplete Engineer Switcher */}
-          <div className="relative w-full lg:w-80" ref={searchContainerRef}>
-            <div className="relative">
-              <Search
-                size={16}
-                className="absolute top-1/2 -translate-y-1/2 right-3 text-gray-400"
-              />
-              <input
-                type="text"
-                placeholder="تغيير المهندس / المستخدم..."
-                value={searchQuery}
-                onFocus={() => setIsSearchOpen(true)}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setIsSearchOpen(true);
-                }}
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl py-2 pr-9 pl-3 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-              />
+          <button
+            type="button"
+            onClick={() => setIsUserDropdownOpen((prev) => !prev)}
+            className="flex items-center gap-3 text-right bg-white hover:bg-blue-50/40 border-2 border-slate-200 hover:border-blue-500 px-3.5 py-2 rounded-xl transition-all shadow-xs group cursor-pointer"
+          >
+            {/* Avatar Circle */}
+            <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-base shadow-sm shrink-0">
+              {activeUser?.full_name ? activeUser.full_name.charAt(0).toUpperCase() : "U"}
             </div>
 
-            {isSearchOpen && (
-              <div className="absolute top-full right-0 left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-50 max-h-64 overflow-y-auto p-1 divide-y divide-gray-100">
-                {filteredUsers.length === 0 ? (
-                  <div className="p-3 text-center text-xs text-gray-400">
-                    لا يوجد مهندس بهذا الاسم
-                  </div>
-                ) : (
-                  filteredUsers.map((u) => {
-                    const isSelected = u.id === activeUser.id;
-                    const projCount = userProjectCountMap.get(u.id) ?? 0;
-                    return (
-                      <button
-                        key={u.id}
-                        type="button"
-                        onClick={() => {
-                          onSelectUser(u);
-                          setIsSearchOpen(false);
-                          setSearchQuery("");
-                        }}
-                        className={`w-full text-right p-2.5 rounded-lg flex items-center justify-between text-xs transition-colors ${
-                          isSelected
-                            ? "bg-primary-superLight/60 text-primary-dark font-semibold"
-                            : "hover:bg-gray-50 text-gray-700"
-                        }`}
-                      >
-                        <div>
-                          <div className="font-medium text-gray-900">
-                            {u.full_name}
-                          </div>
-                          <div className="text-[10px] text-gray-400">
-                            {u.role_name || "بدون دور"} • {u.department_name || ""}
+            <div className="min-w-0 pr-1">
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-slate-900 text-sm group-hover:text-blue-700 transition-colors">
+                  {activeUser?.full_name || "اختر مستخدماً"}
+                </span>
+                <span className="bg-blue-600 text-white text-[11px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 shadow-xs">
+                  <span>تغيير</span>
+                  <ChevronDown size={12} className="transition-transform group-hover:translate-y-0.5" />
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                <span>{activeUser?.role_name || "بدون دور"}</span>
+                <span className="mx-1.5 text-slate-300">·</span>
+                <span>{activeUser?.department_name || "بدون قسم"}</span>
+                <span className="mx-1.5 text-slate-300">·</span>
+                <span className="font-bold text-slate-700">{assignedProjects.length} مشروع مسند</span>
+              </div>
+            </div>
+          </button>
+
+          {/* User Autocomplete Dropdown */}
+          {isUserDropdownOpen && (
+            <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-200 p-2 z-40 animate-in fade-in-50 zoom-in-95 duration-150">
+              <div className="relative mb-2">
+                <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="ابحث بالاسم أو الدور..."
+                  value={userSearchQuery}
+                  onChange={(e) => setUserSearchQuery(e.target.value)}
+                  className="w-full pl-3 pr-8 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                  autoFocus
+                />
+              </div>
+
+              <div className="max-h-64 overflow-y-auto divide-y divide-slate-100">
+                {filteredUsers.map((u) => {
+                  const isSelected = activeUser?.id === u.id;
+                  return (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => {
+                        onSelectUser(u);
+                        setIsUserDropdownOpen(false);
+                        setUserSearchQuery("");
+                      }}
+                      className={`w-full flex items-center justify-between p-2 text-right rounded-lg transition-colors text-xs ${
+                        isSelected ? "bg-blue-50 text-blue-900 font-semibold" : "hover:bg-slate-50 text-slate-700"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+                            isSelected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          {(u.full_name || "U").charAt(0).toUpperCase()}
+                        </div>
+                        <div className="truncate">
+                          <div className="truncate font-medium">{u.full_name || "مستخدم"}</div>
+                          <div className="text-[10px] text-slate-400 truncate">
+                            {u.role_name || "بدون دور"} · {u.department_name || "بدون قسم"}
                           </div>
                         </div>
-                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-gray-100 text-gray-600">
-                          {projCount} مشاريع
-                        </span>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Quick Stats Badges */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-gray-100">
-          <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3">
-            <span className="text-[11px] text-gray-500 block">المشاريع على الهاتف</span>
-            <span className="text-base font-bold text-gray-900 mt-0.5 block">
-              {config.project_scope === "all_projects"
-                ? "كافة مشاريع الشركة"
-                : `${userAssignedProjects.length} مشاريع مسندة`}
-            </span>
-          </div>
-
-          <div className="bg-purple-50/60 border border-purple-200/60 rounded-xl p-3">
-            <span className="text-[11px] text-purple-700 block">اتفاقيات المقاولين</span>
-            <span className="text-base font-bold text-purple-900 mt-0.5 block">
-              {config.view_agreements ? (config.edit_agreements ? "عرض وتعديل" : "عرض فقط") : "معطلة"}
-            </span>
-          </div>
-
-          <div className="bg-amber-50/60 border border-amber-200/60 rounded-xl p-3">
-            <span className="text-[11px] text-amber-800 block">المالية والمصروفات</span>
-            <span className="text-base font-bold text-amber-900 mt-0.5 block">
-              {config.view_project_finance ? "مكشوفة بالهاتف" : "محجوبة ومؤمنة"}
-            </span>
-          </div>
-
-          <div className="bg-emerald-50/60 border border-emerald-200/60 rounded-xl p-3">
-            <span className="text-[11px] text-emerald-700 block">الخرائط والمهام</span>
-            <span className="text-base font-bold text-emerald-900 mt-0.5 block">
-              {config.view_drawings && config.view_tasks ? "متاحة بالهاتف" : "مقيدة جزئياً"}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* SECTION 1: MASTER ACCESS SWITCH */}
-      <div
-        className={`rounded-2xl border p-5 transition-all shadow-xs ${
-          config.mobile_enabled
-            ? "bg-white border-emerald-300 ring-2 ring-emerald-500/10"
-            : "bg-red-50/30 border-red-200"
-        }`}
-      >
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div
-              className={`p-3 rounded-2xl shrink-0 ${
-                config.mobile_enabled
-                  ? "bg-emerald-600 text-white"
-                  : "bg-red-600 text-white"
-              }`}
-            >
-              <Smartphone size={24} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-gray-900">
-                  السماح بتسجيل الدخول إلى تطبيق الهاتف (EGC Builder)
-                </h3>
-                <span
-                  className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
-                    config.mobile_enabled
-                      ? "bg-emerald-100 text-emerald-800"
-                      : "bg-red-100 text-red-800"
-                  }`}
-                >
-                  {config.mobile_enabled ? "دخول مسموح" : "دخول محظور"}
-                </span>
-              </div>
-              <p className="text-xs text-gray-600 mt-1 max-w-2xl leading-relaxed">
-                مفتاح التحكم الرئيسي للدخول عبر تطبيق الهاتف. عند تعطيل هذا الخيار،
-                يتم رفض تسجيل دخول المهندس من تطبيق الموبايل فورياً ويُمنع من
-                الوصول لأي بيانات ميدانية تخص الشركة.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => updateConfig("mobile_enabled", !config.mobile_enabled)}
-              className={`relative inline-flex h-7 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                config.mobile_enabled ? "bg-emerald-600" : "bg-gray-300"
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  config.mobile_enabled ? "-translate-x-7" : "translate-x-0"
-                }`}
-              />
-            </button>
-            {config.mobile_enabled && (
-              <button
-                type="button"
-                onClick={handleImmediateLockout}
-                className="text-xs font-semibold px-3 py-1.5 rounded-xl border border-red-300 bg-red-50 text-red-700 hover:bg-red-100 transition-colors inline-flex items-center gap-1"
-                title="حظر المهندس فورياً من الهاتف"
-              >
-                <Lock size={12} />
-                حظر فوري
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* SECTION 2: PROJECT ACCESS SCOPE */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Building2 size={18} className="text-primary" />
-            <h3 className="text-sm font-bold text-gray-900">
-              نطاق ظهور ومتابعة المشاريع على شاشة الهاتف
-            </h3>
-          </div>
-          <span className="text-[11px] text-gray-500">
-            يحدد أي المشاريع تظهر في قائمة المهندس داخل التطبيق
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {/* Option A: Assigned Projects Only */}
-          <label
-            onClick={() => updateConfig("project_scope", "team_projects_only")}
-            className={`cursor-pointer rounded-xl border p-4 flex items-start gap-3 transition-all ${
-              config.project_scope === "team_projects_only"
-                ? "bg-primary-superLight/40 border-primary ring-1 ring-primary"
-                : "bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-            }`}
-          >
-            <input
-              type="radio"
-              name="project_scope"
-              checked={config.project_scope === "team_projects_only"}
-              onChange={() =>
-                updateConfig("project_scope", "team_projects_only")
-              }
-              className="mt-1 text-primary focus:ring-primary"
-            />
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-gray-900">
-                  المشاريع المسندة فقط (الموصى به لمهندسي المواقع)
-                </span>
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
-                  الافتراضي
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-600 leading-relaxed">
-                لا يظهر للمهندس على هاتفه إلا المشاريع التي يعمل بها رسمياً ضمن فرق
-                العمل، لمنع التشتت والحفاظ على خصوصية باقي المشاريع.
-              </p>
-            </div>
-          </label>
-
-          {/* Option B: All Projects */}
-          <label
-            onClick={() => updateConfig("project_scope", "all_projects")}
-            className={`cursor-pointer rounded-xl border p-4 flex items-start gap-3 transition-all ${
-              config.project_scope === "all_projects"
-                ? "bg-primary-superLight/40 border-primary ring-1 ring-primary"
-                : "bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-            }`}
-          >
-            <input
-              type="radio"
-              name="project_scope"
-              checked={config.project_scope === "all_projects"}
-              onChange={() => updateConfig("project_scope", "all_projects")}
-              className="mt-1 text-primary focus:ring-primary"
-            />
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-gray-900">
-                  كافة مشاريع الشركة (للإشراف العام والإدارة)
-                </span>
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800">
-                  وصول شامل
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-600 leading-relaxed">
-                يسمح للمهندس باستعراض وتفقد كافة مشاريع EGC في قائمته من الهاتف. مخصص لمدراء المشروعات والمشرفين العموميين.
-              </p>
-            </div>
-          </label>
-        </div>
-
-        {/* Assigned Projects Sub-panel */}
-        <div className="bg-gray-50/80 rounded-xl border border-gray-200/80 p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <HardHat size={16} className="text-gray-600" />
-              <span className="text-xs font-bold text-gray-800">
-                المشاريع المسندة حالياً للمهندس ({userAssignedProjects.length})
-              </span>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setIsAddProjectOpen((v) => !v)}
-              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-primary text-white hover:bg-primary-dark transition-colors inline-flex items-center gap-1.5"
-            >
-              <Plus size={14} />
-              إسناد مشروع جديد لهذا المهندس
-            </button>
-          </div>
-
-          {/* Quick Add Project Form */}
-          {isAddProjectOpen && (
-            <div className="bg-white border border-primary/30 rounded-xl p-4 shadow-sm space-y-3 animate-fade-in">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-bold text-gray-900">
-                  إسناد مشروع جديد للمهندس لفتحه على الهاتف
-                </h4>
-                <button
-                  type="button"
-                  onClick={() => setIsAddProjectOpen(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X size={15} />
-                </button>
-              </div>
-
-              {addError && (
-                <div className="text-xs text-red-600 bg-red-50 p-2 rounded-lg border border-red-200">
-                  {addError}
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11px] text-gray-600 block mb-1">
-                    اختر المشروع:
-                  </label>
-                  <select
-                    value={selectedProjectIdToAdd}
-                    onChange={(e) => setSelectedProjectIdToAdd(e.target.value)}
-                    className="w-full text-xs border border-gray-300 rounded-lg p-2 focus:ring-1 focus:ring-primary focus:outline-none bg-white"
-                  >
-                    <option value="">-- حدد المشروع --</option>
-                    {availableProjectsToAssign.map((p) => (
-                      <option key={p.projectId} value={p.projectId}>
-                        {p.serialNumber ? `#${p.serialNumber} - ` : ""}
-                        {p.projectName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[11px] text-gray-600 block mb-1">
-                    الدور في المشروع:
-                  </label>
-                  <select
-                    value={selectedRoleIdToAdd}
-                    onChange={(e) => setSelectedRoleIdToAdd(e.target.value)}
-                    className="w-full text-xs border border-gray-300 rounded-lg p-2 focus:ring-1 focus:ring-primary focus:outline-none bg-white"
-                  >
-                    <option value="">-- حدد الدور --</option>
-                    {(projectRolesAdmin ?? []).map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setIsAddProjectOpen(false)}
-                >
-                  إلغاء
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={handleAssignProject}
-                  disabled={addTeamMember.isPending}
-                >
-                  {addTeamMember.isPending ? "جاري الإسناد..." : "تأكيد الإسناد"}
-                </Button>
+                      </div>
+                      {isSelected && <Check size={14} className="text-blue-600 shrink-0 mr-2" />}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
+        </div>
 
-          {/* Projects List */}
-          {userAssignedProjects.length === 0 ? (
-            <div className="bg-white border border-dashed border-gray-200 rounded-xl p-5 text-center text-xs text-gray-500">
-              لا توجد مشاريع مسندة لهذا المهندس حالياً. انقر على &quot;إسناد مشروع
-              جديد&quot; لتمكينه من متابعة المشاريع من هاتفه.
+        {/* Left side: Master Switch "دخول تطبيق الهاتف" */}
+        <div className="flex items-center gap-3">
+          <div className="text-left">
+            <div className="flex items-center gap-1.5 justify-end">
+              <span className="text-xs font-bold text-slate-800">دخول تطبيق الهاتف</span>
+              <Smartphone size={15} className="text-slate-500" />
             </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-              {userAssignedProjects.map((p) => (
-                <div
-                  key={p.assignmentId}
-                  className="bg-white border border-gray-200 rounded-xl p-3 flex items-center justify-between gap-2 shadow-2xs hover:border-gray-300 transition-colors"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">
-                        #{p.serialNumber ?? "—"}
+            <div className="text-[10px] text-left font-medium">
+              {isMobileAccessAllowed ? (
+                <span className="text-emerald-600 font-bold">مسموح له بالدخول</span>
+              ) : (
+                <span className="text-red-600 font-bold">محظور من الهاتف</span>
+              )}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleToggleMasterAccess}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+              isMobileAccessAllowed ? "bg-blue-600" : "bg-slate-300"
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                isMobileAccessAllowed ? "-translate-x-5" : "translate-x-0"
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* =====================================================================
+          MAIN 2-COLUMN CONTENT:
+          - FIRST CHILD (RTL) = RIGHT SIDEBAR: Projects List (cols 4/12)
+          - SECOND CHILD (RTL) = LEFT MAIN PANEL: Permissions (cols 8/12)
+         ===================================================================== */}
+      <div
+        className={`grid grid-cols-1 lg:grid-cols-12 gap-4 transition-opacity duration-200 ${
+          !isMobileAccessAllowed ? "opacity-40 pointer-events-none select-none grayscale-[40%]" : ""
+        }`}
+      >
+        {/* =====================================================================
+            1. RIGHT SIDEBAR: Projects List Column (cols 4/12) -> SITS ON RIGHT
+           ===================================================================== */}
+        <div className="lg:col-span-4 space-y-3">
+          <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
+            {/* Header: Title + "+ إسناد" Button */}
+            <div className="flex items-center justify-between mb-2.5 pb-2 border-b border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsAddProjectOpen(true)}
+                className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors"
+              >
+                <Plus size={14} />
+                <span>إسناد</span>
+              </button>
+
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-xs text-slate-900">المشاريع</span>
+                <span className="bg-slate-100 text-slate-600 font-mono text-[11px] px-1.5 py-0.5 rounded-full font-semibold">
+                  {assignedProjects.length}
+                </span>
+              </div>
+            </div>
+
+            {/* Search Input */}
+            <div className="relative mb-2.5">
+              <Search size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="ابحث بالاسم أو الرقم..."
+                value={projectSearchQuery}
+                onChange={(e) => setProjectSearchQuery(e.target.value)}
+                className="w-full pl-3 pr-8 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all placeholder:text-slate-400"
+              />
+            </div>
+
+            {/* Scrollable Project Cards List */}
+            <div className="space-y-1.5 max-h-[calc(100vh-280px)] overflow-y-auto pr-0.5">
+              {filteredAssignedProjects.length > 0 ? (
+                filteredAssignedProjects.map((p) => {
+                  const isActive = activeProjectId === p.project.projectId;
+                  const count = getActiveCountForProject(p.project.projectId);
+
+                  return (
+                    <button
+                      key={p.project.projectId}
+                      type="button"
+                      onClick={() => setActiveProjectId(p.project.projectId)}
+                      className={`w-full text-right p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2.5 ${
+                        isActive
+                          ? "bg-blue-50/60 border-blue-500 shadow-sm ring-1 ring-blue-500/20"
+                          : "bg-white border-slate-200/80 hover:bg-slate-50/80 hover:border-slate-300"
+                      }`}
+                    >
+                      {/* Left side: Count Ratio Badge (7/11) */}
+                      <span
+                        className={`text-xs font-mono font-medium shrink-0 ${
+                          isActive ? "text-blue-700 font-bold" : "text-slate-400"
+                        }`}
+                      >
+                        {count}/11
                       </span>
-                      <h5 className="text-xs font-bold text-gray-900 truncate">
-                        {p.projectName}
-                      </h5>
+
+                      {/* Right side: Serial Badge, Project Name, Role */}
+                      <div className="min-w-0 flex items-center gap-2 justify-end">
+                        <div className="truncate text-right">
+                          <div
+                            className={`text-xs font-semibold truncate ${
+                              isActive ? "text-blue-950" : "text-slate-800"
+                            }`}
+                          >
+                            {p.project.projectName}
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                            {p.assignmentRoleName}
+                          </div>
+                        </div>
+
+                        {/* Serial Pill */}
+                        <span
+                          className={`font-mono text-[10px] px-1.5 py-0.5 rounded font-bold shrink-0 ${
+                            isActive
+                              ? "bg-blue-600 text-white"
+                              : "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          {p.projectSerialNumber}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="p-6 text-center text-slate-400 text-xs">
+                  {projectSearchQuery ? "لا توجد نتائج بحث" : "لا توجد مشاريع مسندة"}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* =====================================================================
+            2. LEFT MAIN PANEL: Active Project Details & Permissions (cols 8/12) -> SITS ON LEFT
+           ===================================================================== */}
+        <div className="lg:col-span-8 space-y-3">
+          {activeProjectObj ? (
+            <>
+              {/* Project Top Card with Progress & Actions */}
+              <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  {/* Left Actions: "نسخ من مشروع" + Remove Team Member */}
+                  <div className="flex items-center gap-2">
+                    {/* Copy Permissions Dropdown */}
+                    <div className="relative" ref={copyDropdownRef}>
+                      <button
+                        type="button"
+                        onClick={() => setIsCopyDropdownOpen((prev) => !prev)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <Copy size={13} className="text-slate-500" />
+                        <span>نسخ من مشروع</span>
+                      </button>
+
+                      {isCopyDropdownOpen && (
+                        <div className="absolute left-0 top-full mt-1.5 w-72 bg-white rounded-xl shadow-xl border border-slate-200 p-2 z-30 animate-in fade-in zoom-in-95 duration-100">
+                          <div className="text-[11px] font-semibold text-slate-600 px-2 py-1 mb-1 border-b border-slate-100">
+                            اختر مشروعاً لنسخ صلاحياته إلى هذا المشروع:
+                          </div>
+                          <div className="max-h-52 overflow-y-auto divide-y divide-slate-100">
+                            {assignedProjects
+                              .filter((p) => p.project.projectId !== activeProjectId)
+                              .map((p) => (
+                                <button
+                                  key={p.project.projectId}
+                                  type="button"
+                                  onClick={() => handleCopyPermissionsFrom(p.project.projectId)}
+                                  className="w-full flex items-center justify-between p-2 text-right hover:bg-blue-50 rounded-lg text-xs transition-colors"
+                                >
+                                  <span className="font-medium text-slate-800 truncate">
+                                    {p.project.projectName}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-mono shrink-0 mr-2">
+                                    {getActiveCountForProject(p.project.projectId)}/11
+                                  </span>
+                                </button>
+                              ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <span className="text-[11px] text-primary-dark mt-0.5 block truncate">
-                      {p.projectRoleName}
-                    </span>
+
+                    {/* Remove Member Button */}
+                    <button
+                      type="button"
+                      onClick={handleRemoveProject}
+                      title="إلغاء إسناد هذا المشروع عن المهندس"
+                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg border border-transparent hover:border-red-100 transition-colors cursor-pointer"
+                    >
+                      <Trash2 size={15} />
+                    </button>
                   </div>
 
+                  {/* Right side: Project Name, Serial Badge, Subtitle */}
+                  <div className="text-right">
+                    <div className="flex items-center gap-2 justify-end">
+                      <h2 className="font-bold text-slate-900 text-base">
+                        {activeProjectObj.project.projectName}
+                      </h2>
+                      <span className="bg-blue-600 text-white font-mono text-xs px-2 py-0.5 rounded font-bold">
+                        {activeProjectObj.projectSerialNumber}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      <span>{activeProjectObj.assignmentRoleName}</span>
+                      <span className="mx-1 text-slate-300">·</span>
+                      <span className="font-medium text-slate-700">
+                        {activeProjectCounts.allowed} من {activeProjectCounts.total} صلاحية مفعلة
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Progress Bar (ratio of allowed permissions) */}
+                <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                  <div
+                    className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
+                    style={{ width: `${activeProjectCounts.percent}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* =====================================================================
+                  PERMISSIONS SECTION 1: الميدان والتنفيذ (5 rights)
+                 ===================================================================== */}
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                <div className="px-4 py-2.5 bg-slate-50/70 border-b border-slate-200 flex items-center justify-between">
                   <button
                     type="button"
                     onClick={() =>
-                      handleRemoveProject(
-                        p.assignmentId,
-                        p.projectId,
-                        p.projectName,
+                      handleToggleCategory(
+                        "site",
+                        activeProjectCounts.site !== 5,
                       )
                     }
-                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
-                    title="إزالة من هاتف المهندس"
+                    className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
                   >
-                    <Trash2 size={14} />
+                    {activeProjectCounts.site === 5 ? "إلغاء الكل" : "تفعيل الكل"}
                   </button>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono text-slate-500 font-medium">
+                      {activeProjectCounts.site}/5
+                    </span>
+                    <span className="font-bold text-xs text-slate-900">الميدان والتنفيذ</span>
+                    <Building2 size={15} className="text-slate-600" />
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
 
-      {/* SECTION 3: CONTRACTORS & AGREEMENTS */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-xs space-y-4">
-        <div>
-          <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-            <Users size={18} className="text-purple-600" />
-            اتفاقيات ومستحقات مقاولي الباطن في الموقع
-          </h3>
-          <p className="text-xs text-gray-500 mt-1">
-            صلاحيات إدارة عقود واتفاقيات المقاولين، تسجيل الغرامات والاطلاع على سجل الدفعات
-          </p>
-        </div>
+                <div className="divide-y divide-slate-100">
+                  {PROJECT_RIGHTS_CATALOG.filter((r) => r.category === "site").map((right) => {
+                    const isAllowed = checkRight(activeProjectId, right);
+                    const Icon = right.icon;
+                    return (
+                      <div
+                        key={right.id}
+                        className="px-4 py-3 flex items-center justify-between hover:bg-slate-50/50 transition-colors"
+                      >
+                        {/* Left: Switch */}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleRight(right)}
+                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                            isAllowed ? "bg-blue-600" : "bg-slate-200"
+                          }`}
+                        >
+                          <span
+                            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                              isAllowed ? "-translate-x-4" : "translate-x-0"
+                            }`}
+                          />
+                        </button>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-          {/* Feature: View Agreements */}
-          <div className="border border-gray-200 rounded-xl p-4 flex items-start justify-between gap-3 bg-white hover:border-gray-300 transition-colors">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <FileText size={16} className="text-purple-600" />
-                <span className="text-xs font-bold text-gray-900">
-                  استعراض اتفاقيات مقاولي المشروع
-                </span>
+                        {/* Right: Title & Description */}
+                        <div className="text-right flex items-center gap-3">
+                          <div>
+                            <div className="font-semibold text-xs text-slate-800">{right.label}</div>
+                            <div className="text-[11px] text-slate-400">{right.description}</div>
+                          </div>
+                          <div className="w-8 h-8 rounded-lg bg-slate-50 text-slate-600 flex items-center justify-center shrink-0 border border-slate-100">
+                            <Icon size={16} />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              <p className="text-[11px] text-gray-500 leading-relaxed">
-                السماح بفتح بلاطة الاتفاقيات وتفقد تفاصيل بنود وأسعار العقود المبرمة مع المقاولين في هذا المشروع.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => updateConfig("view_agreements", !config.view_agreements)}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                config.view_agreements ? "bg-primary" : "bg-gray-200"
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  config.view_agreements ? "-translate-x-5" : "translate-x-0"
-                }`}
-              />
-            </button>
-          </div>
 
-          {/* Feature: Edit / Create Agreements */}
-          <div className="border border-gray-200 rounded-xl p-4 flex items-start justify-between gap-3 bg-white hover:border-gray-300 transition-colors">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <FileSignature size={16} className="text-indigo-600" />
-                <span className="text-xs font-bold text-gray-900">
-                  إنشاء وتعديل الاتفاقيات بالموقع
-                </span>
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">
-                  صلاحية متقدمة
-                </span>
+              {/* =====================================================================
+                  PERMISSIONS SECTION 2: التوريدات وطلبات المواد (2 rights)
+                 ===================================================================== */}
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                <div className="px-4 py-2.5 bg-slate-50/70 border-b border-slate-200 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleToggleCategory(
+                        "procurement",
+                        activeProjectCounts.proc !== 2,
+                      )
+                    }
+                    className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
+                  >
+                    {activeProjectCounts.proc === 2 ? "إلغاء الكل" : "تفعيل الكل"}
+                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono text-slate-500 font-medium">
+                      {activeProjectCounts.proc}/2
+                    </span>
+                    <span className="font-bold text-xs text-slate-900">التوريدات وطلبات المواد</span>
+                    <ShoppingCart size={15} className="text-slate-600" />
+                  </div>
+                </div>
+
+                <div className="divide-y divide-slate-100">
+                  {PROJECT_RIGHTS_CATALOG.filter((r) => r.category === "procurement").map((right) => {
+                    const isAllowed = checkRight(activeProjectId, right);
+                    const Icon = right.icon;
+                    return (
+                      <div
+                        key={right.id}
+                        className="px-4 py-3 flex items-center justify-between hover:bg-slate-50/50 transition-colors"
+                      >
+                        {/* Left: Switch */}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleRight(right)}
+                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                            isAllowed ? "bg-blue-600" : "bg-slate-200"
+                          }`}
+                        >
+                          <span
+                            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                              isAllowed ? "-translate-x-4" : "translate-x-0"
+                            }`}
+                          />
+                        </button>
+
+                        {/* Right: Title & Description */}
+                        <div className="text-right flex items-center gap-3">
+                          <div>
+                            <div className="font-semibold text-xs text-slate-800">{right.label}</div>
+                            <div className="text-[11px] text-slate-400">{right.description}</div>
+                          </div>
+                          <div className="w-8 h-8 rounded-lg bg-slate-50 text-slate-600 flex items-center justify-center shrink-0 border border-slate-100">
+                            <Icon size={16} />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              <p className="text-[11px] text-gray-500 leading-relaxed">
-                تمكين المهندس من إبرام اتفاقية جديدة أو إضافة ملحق وتعديل بنود اتفاقية قائمة من هاتفه.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => updateConfig("edit_agreements", !config.edit_agreements)}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                config.edit_agreements ? "bg-primary" : "bg-gray-200"
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  config.edit_agreements ? "-translate-x-5" : "translate-x-0"
-                }`}
-              />
-            </button>
-          </div>
 
-          {/* Feature: Site Penalties */}
-          <div className="border border-gray-200 rounded-xl p-4 flex items-start justify-between gap-3 bg-white hover:border-gray-300 transition-colors">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <ShieldAlert size={16} className="text-red-600" />
-                <span className="text-xs font-bold text-gray-900">
-                  تسجيل مخالفات وغرامات المقاولين
-                </span>
+              {/* =====================================================================
+                  PERMISSIONS SECTION 3: العقود والمالية (4 rights - الحساسة)
+                 ===================================================================== */}
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                <div className="px-4 py-2.5 bg-slate-50/70 border-b border-slate-200 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleToggleCategory(
+                        "finance",
+                        activeProjectCounts.fin !== 4,
+                      )
+                    }
+                    className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
+                  >
+                    {activeProjectCounts.fin === 4 ? "إلغاء الكل" : "تفعيل الكل"}
+                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono text-slate-500 font-medium">
+                      {activeProjectCounts.fin}/4
+                    </span>
+                    <span className="font-bold text-xs text-slate-900">العقود والمالية</span>
+                    <DollarSign size={15} className="text-slate-600" />
+                  </div>
+                </div>
+
+                <div className="divide-y divide-slate-100">
+                  {PROJECT_RIGHTS_CATALOG.filter((r) => r.category === "finance").map((right) => {
+                    const isAllowed = checkRight(activeProjectId, right);
+                    const Icon = right.icon;
+                    return (
+                      <div
+                        key={right.id}
+                        className="px-4 py-3 flex items-center justify-between hover:bg-slate-50/50 transition-colors"
+                      >
+                        {/* Left: Switch */}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleRight(right)}
+                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                            isAllowed ? "bg-blue-600" : "bg-slate-200"
+                          }`}
+                        >
+                          <span
+                            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                              isAllowed ? "-translate-x-4" : "translate-x-0"
+                            }`}
+                          />
+                        </button>
+
+                        {/* Right: Title, Sensitive Badge & Description */}
+                        <div className="text-right flex items-center gap-3">
+                          <div>
+                            <div className="flex items-center gap-1.5 justify-end">
+                              <span className="font-semibold text-xs text-slate-800">{right.label}</span>
+                              {right.isSensitive && (
+                                <span className="inline-flex items-center gap-0.5 bg-amber-50 text-amber-700 border border-amber-200 text-[10px] px-1.5 py-0.5 rounded font-medium">
+                                  <Lock size={9} />
+                                  <span>حساسة</span>
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-400">{right.description}</div>
+                          </div>
+                          <div className="w-8 h-8 rounded-lg bg-slate-50 text-slate-600 flex items-center justify-center shrink-0 border border-slate-100">
+                            <Icon size={16} />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              <p className="text-[11px] text-gray-500 leading-relaxed">
-                تحرير غرامات وخصومات مالية فورية بحق المقاول من الموقع وتصل لهاتفه فوراً كإشعار عاجل وبانر أحمر.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => updateConfig("site_penalties", !config.site_penalties)}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                config.site_penalties ? "bg-primary" : "bg-gray-200"
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  config.site_penalties ? "-translate-x-5" : "translate-x-0"
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Feature: Contractor Payments */}
-          <div className="border border-gray-200 rounded-xl p-4 flex items-start justify-between gap-3 bg-white hover:border-gray-300 transition-colors">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <DollarSign size={16} className="text-emerald-600" />
-                <span className="text-xs font-bold text-gray-900">
-                  الاطلاع على دفعات وسجل سداد المقاولين
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-500 leading-relaxed">
-                إظهار تبويب وبلاطة المدفوعات لمتابعة الدفعات المعتمدة والمسددة وتواريخ الصرف للمقاولين.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => updateConfig("contractor_payments", !config.contractor_payments)}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                config.contractor_payments ? "bg-primary" : "bg-gray-200"
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  config.contractor_payments ? "-translate-x-5" : "translate-x-0"
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Feature: Contractor Contacts */}
-          <div className="border border-gray-200 rounded-xl p-4 flex items-start justify-between gap-3 bg-white hover:border-gray-300 transition-colors col-span-1 md:col-span-2">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <PhoneCall size={16} className="text-amber-600" />
-                <span className="text-xs font-bold text-gray-900">
-                  دليل أرقام وهواتف مقاولي المشروع
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-500 leading-relaxed">
-                إتاحة بلاطة &quot;أرقام المقاولين&quot; بالهاتف للتواصل السريع والمباشر مع المقاولين وفرق العمل الميدانية.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => updateConfig("contractor_contacts", !config.contractor_contacts)}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                config.contractor_contacts ? "bg-primary" : "bg-gray-200"
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  config.contractor_contacts ? "-translate-x-5" : "translate-x-0"
-                }`}
-              />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* SECTION 4: MAPS & TASKS */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-xs space-y-4">
-        <div>
-          <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-            <CheckSquare size={18} className="text-primary" />
-            المخططات الهندسية والمهام الميدانية
-          </h3>
-          <p className="text-xs text-gray-500 mt-1">
-            استعراض الرسومات واللوحات التنفيذية، وتوزيع ومتابعة المهام الميدانية
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-          {/* Feature: Drawings / Maps */}
-          <div className="border border-gray-200 rounded-xl p-4 flex items-start justify-between gap-3 bg-white hover:border-gray-300 transition-colors">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <MapPin size={16} className="text-teal-600" />
-                <span className="text-xs font-bold text-gray-900">
-                  استعراض الخرائط والمخططات الهندسية
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-500 leading-relaxed">
-                فتح واستعراض الرسومات التنفيذية المعمارية والإنشائية ومخططات PDF بمناطق المشروع لمطابقة التنفيذ.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => updateConfig("view_drawings", !config.view_drawings)}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                config.view_drawings ? "bg-primary" : "bg-gray-200"
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  config.view_drawings ? "-translate-x-5" : "translate-x-0"
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Feature: View Tasks */}
-          <div className="border border-gray-200 rounded-xl p-4 flex items-start justify-between gap-3 bg-white hover:border-gray-300 transition-colors">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 size={16} className="text-blue-600" />
-                <span className="text-xs font-bold text-gray-900">
-                  متابعة واستعراض مهام المشروع
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-500 leading-relaxed">
-                الاطلاع على قائمة مهام المشروع ولوحات التنفيذ وتتبع المهام المكتملة والمتأخرة.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => updateConfig("view_tasks", !config.view_tasks)}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                config.view_tasks ? "bg-primary" : "bg-gray-200"
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  config.view_tasks ? "-translate-x-5" : "translate-x-0"
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Feature: Create / Manage Tasks */}
-          <div className="border border-gray-200 rounded-xl p-4 flex items-start justify-between gap-3 bg-white hover:border-gray-300 transition-colors col-span-1 md:col-span-2">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <CheckSquare size={16} className="text-indigo-600" />
-                <span className="text-xs font-bold text-gray-900">
-                  إنشاء وتكليف مهام ميدانية جديدة
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-500 leading-relaxed">
-                تمكين المهندس من إنشاء مهام وتكليف أعضاء الفريق أو المقاولين بها وتحديد تاريخ التسليم والأولويات.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => updateConfig("manage_tasks", !config.manage_tasks)}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                config.manage_tasks ? "bg-primary" : "bg-gray-200"
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  config.manage_tasks ? "-translate-x-5" : "translate-x-0"
-                }`}
-              />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* SECTION 5: ORDERS & PROCUREMENT */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-xs space-y-4">
-        <div>
-          <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-            <ShoppingCart size={18} className="text-primary" />
-            طلبات الشراء والمخزن ومراجعة الأسعار
-          </h3>
-          <p className="text-xs text-gray-500 mt-1">
-            صلاحيات طلب وتزويد المواد للمشروع، ومراجعة واعتماد عروض الأسعار
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-          {/* Feature: Material Requests */}
-          <div className="border border-gray-200 rounded-xl p-4 flex items-start justify-between gap-3 bg-white hover:border-gray-300 transition-colors">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <ShoppingCart size={16} className="text-sky-600" />
-                <span className="text-xs font-bold text-gray-900">
-                  رفع واستعراض طلبات المواد من المخزن
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-500 leading-relaxed">
-                إرسال طلب تزويد مواد أو عهدة أصناف ناقصة في الموقع مباشرة إلى إدارة المشتريات ومخازن الشركة.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => updateConfig("material_requests", !config.material_requests)}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                config.material_requests ? "bg-primary" : "bg-gray-200"
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  config.material_requests ? "-translate-x-5" : "translate-x-0"
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Feature: Review & Approve Order Prices */}
-          <div className="border border-gray-200 rounded-xl p-4 flex items-start justify-between gap-3 bg-white hover:border-gray-300 transition-colors">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <FileCheck2 size={16} className="text-amber-600" />
-                <span className="text-xs font-bold text-gray-900">
-                  مراجعة واعتماد أسعار وتكلفة الطلبات
-                </span>
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
-                  للإدارة والمالية
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-500 leading-relaxed">
-                إظهار شاشة مراجعة واعتماد عروض الأسعار الواردة من الموردين لطلبات الشراء والموافقة عليها من الهاتف.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => updateConfig("review_orders", !config.review_orders)}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                config.review_orders ? "bg-primary" : "bg-gray-200"
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  config.review_orders ? "-translate-x-5" : "translate-x-0"
-                }`}
-              />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* SECTION 6: FINANCIAL PRIVACY & SALARY */}
-      <div className="bg-white rounded-2xl border border-amber-200 p-5 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <ShieldCheck size={20} className="text-amber-600" />
-            <div>
-              <h3 className="text-sm font-bold text-gray-900">
-                السرية المالية وكشف الراتب (Financial Privacy & Salary)
-              </h3>
-              <p className="text-xs text-gray-500 mt-0.5">
-                التحكم في ظهور أرقام ومصروفات المشروع وإظهار كشف الراتب الشخصي
-              </p>
-            </div>
-          </div>
-          <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-200">
-            أمان مالي مشدد
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-          {/* Privacy Toggle 1: View Project Finance */}
-          <div
-            className={`border rounded-xl p-4 flex items-start justify-between gap-4 transition-all ${
-              config.view_project_finance
-                ? "bg-amber-50/50 border-amber-300"
-                : "bg-white border-gray-200"
-            }`}
-          >
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <DollarSign size={16} className={config.view_project_finance ? "text-amber-700" : "text-gray-400"} />
-                <span className="text-xs font-bold text-gray-900">
-                  الاطلاع على مالية ومصروفات المشروع الشاملة
-                </span>
-                <span
-                  className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                    config.view_project_finance
-                      ? "bg-amber-200 text-amber-900"
-                      : "bg-emerald-100 text-emerald-800"
-                  }`}
-                >
-                  {config.view_project_finance ? "المالية مكشوفة" : "محجوبة (موصى به)"}
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-600 leading-relaxed">
-                عند التعطيل، تُحجب بلاطة &quot;المالية&quot; وأرقام الإيرادات ومصاريف المشروع عن المهندس لحماية خصوصية وهوامش أرباح الشركة.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => updateConfig("view_project_finance", !config.view_project_finance)}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                config.view_project_finance ? "bg-amber-600" : "bg-gray-300"
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  config.view_project_finance ? "-translate-x-5" : "translate-x-0"
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Privacy Toggle 2: View Own Salary */}
-          <div className="border border-gray-200 rounded-xl p-4 flex items-start justify-between gap-4 bg-white hover:border-gray-300 transition-colors">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <Wallet size={16} className="text-emerald-600" />
-                <span className="text-xs font-bold text-gray-900">
-                  عرض كشف الراتب الشخصي في الملف
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-500 leading-relaxed">
-                تمكين الموظف من فتح خيار كشف الراتب في الملف الشخصي بالتطبيق للاطلاع على تفاصيل مسير راتبه.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => updateConfig("view_own_salary", !config.view_own_salary)}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                config.view_own_salary ? "bg-primary" : "bg-gray-200"
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  config.view_own_salary ? "-translate-x-5" : "translate-x-0"
-                }`}
-              />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Sticky Action Footer */}
-      <div className="sticky bottom-4 z-40 bg-white/95 backdrop-blur-md rounded-2xl border border-gray-300/80 p-4 shadow-xl flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          {isDirty ? (
-            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl">
-              <span className="h-2 w-2 rounded-full bg-amber-500 animate-ping" />
-              لديك تعديلات غير محفوظة على صلاحيات الهاتف
-            </span>
+            </>
           ) : (
-            <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
-              <CheckCircle2 size={15} className="text-emerald-500" />
-              جميع الصلاحيات متطابقة ومحدثة مع السحابة
-            </span>
+            /* Empty State: No active project */
+            <div className="bg-white rounded-xl border border-slate-200 p-12 text-center shadow-sm">
+              <Building2 size={40} className="mx-auto text-slate-300 mb-3" />
+              <h3 className="font-bold text-slate-800 text-sm mb-1">
+                لا توجد مشاريع مسندة لهذا المهندس حالياً
+              </h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto mb-5">
+                قم بإسناد أول مشروع له لتتمكن من تحديد صلاحياته الميدانية والمالية على تطبيق الهاتف.
+              </p>
+              <button
+                type="button"
+                onClick={() => setIsAddProjectOpen(true)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow transition-colors cursor-pointer"
+              >
+                <Plus size={15} />
+                <span>إسناد أول مشروع الآن</span>
+              </button>
+            </div>
           )}
         </div>
-
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleReset}
-            disabled={!isDirty || saveGrantsMutation.isPending}
-            className="text-xs"
-          >
-            <RotateCcw size={14} className="ml-1" />
-            استعادة الافتراضي
-          </Button>
-
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={handleSave}
-            disabled={saveGrantsMutation.isPending || !isDirty}
-            className="text-xs font-semibold px-4 py-2"
-          >
-            <Save size={14} className="ml-1" />
-            {saveGrantsMutation.isPending
-              ? "جاري الحفظ والمزامنة..."
-              : "حفظ صلاحيات الهاتف"}
-          </Button>
-        </div>
       </div>
+
+      {/* =====================================================================
+          ASSIGN PROJECT MODAL
+         ===================================================================== */}
+      {isAddProjectOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 space-y-4 border border-slate-100 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsAddProjectOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X size={18} />
+              </button>
+              <h3 className="font-bold text-slate-900 text-sm">
+                إسناد مشروع جديد إلى {activeUser?.full_name}
+              </h3>
+            </div>
+
+            <form onSubmit={handleAssignProject} className="space-y-4">
+              {addError && (
+                <div className="p-3 bg-red-50 text-red-700 text-xs rounded-lg flex items-center gap-2 border border-red-200">
+                  <AlertTriangle size={15} className="shrink-0" />
+                  <span>{addError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  المشروع المراد إسناده
+                </label>
+                <select
+                  value={selectedProjectIdToAdd}
+                  onChange={(e) => setSelectedProjectIdToAdd(e.target.value)}
+                  className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                >
+                  <option value="">-- اختر المشروع --</option>
+                  {availableProjectsToAdd.map((p) => (
+                    <option key={p.projectId} value={p.projectId}>
+                      {p.projectName} {p.serialNumber ? `(${p.serialNumber})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  الدور في فريق المشروع
+                </label>
+                <select
+                  value={selectedRoleIdToAdd}
+                  onChange={(e) => setSelectedRoleIdToAdd(e.target.value)}
+                  className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                >
+                  <option value="">-- اختر الدور في المشروع --</option>
+                  {projectRolesAdmin?.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsAddProjectOpen(false)}
+                  className="px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={addTeamMember.isPending}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  {addTeamMember.isPending ? "جاري الإسناد..." : "إسناد المشروع"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

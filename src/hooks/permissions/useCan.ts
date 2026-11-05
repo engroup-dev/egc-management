@@ -115,9 +115,24 @@ export const myPermissionsQueryOptions = (
         projectId ? { p_project_id: projectId } : {},
       );
       if (error) throw error;
-      return ((data ?? []) as EffectivePermissionRow[])
+      const allowedNames = ((data ?? []) as EffectivePermissionRow[])
         .filter((row) => row.allowed)
         .map((row) => row.permission_name);
+
+      // Default gate for view_analytics_section:
+      // If the permission catalog row hasn't been added to Postgres yet,
+      // allow Admin users (who have view_settings_section or manage_permissions_company)
+      // to access Analytics while blocking regular users (Engineers, Contractors, etc.).
+      if (!allowedNames.includes("view_analytics_section")) {
+        if (
+          allowedNames.includes("view_settings_section") ||
+          allowedNames.includes("manage_permissions_company")
+        ) {
+          allowedNames.push("view_analytics_section");
+        }
+      }
+
+      return allowedNames;
     },
   });
 
