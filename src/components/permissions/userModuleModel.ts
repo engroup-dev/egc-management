@@ -3,6 +3,8 @@ import {
   BarChart3,
   Building,
   DollarSign,
+  FolderCog,
+  History,
   LinkIcon,
   ListTodo,
   MapPin,
@@ -18,6 +20,7 @@ export type ModuleId =
   | "hr"
   | "finance"
   | "projects"
+  | "execution-management"
   | "operations"
   | "supply-chain"
   | "shops"
@@ -25,7 +28,8 @@ export type ModuleId =
   | "company"
   | "tasks"
   | "analytics"
-  | "settings";
+  | "settings"
+  | "activity-log";
 
 export type ActionCategory = "gate" | "view" | "create" | "edit" | "delete";
 
@@ -47,25 +51,11 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     gateNames: ["view_hr_section"],
   },
   {
-    id: "finance",
-    label: "المالية",
-    subtitle: "مسك الدفاتر، الخزينة، الدفعات، ومالية الشركة والمشاريع",
-    icon: DollarSign,
-    gateNames: ["view_finance_section"],
-  },
-  {
-    id: "projects",
-    label: "المشاريع وإدارة التنفيذ",
-    subtitle: "ملفات المشاريع، فرق العمل، العدادات، وصلاحيات المشاريع",
-    icon: MapPin,
-    gateNames: ["view_projects", "view_execution_section"],
-  },
-  {
-    id: "operations",
-    label: "التشغيل والعقود والكميات",
-    subtitle: "الاتفاقيات والعقود، جداول الكميات (BOQ)، والخرائط",
-    icon: PackageOpen,
-    gateNames: ["view_operations_section"],
+    id: "crm",
+    label: "إدارة العملاء",
+    subtitle: "سجلات العملاء وإضافة وتعديل بياناتهم",
+    icon: ShieldUser,
+    gateNames: ["view_clients"],
   },
   {
     id: "supply-chain",
@@ -75,25 +65,46 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     gateNames: ["view_contractors"],
   },
   {
+    id: "projects",
+    label: "المشاريع",
+    subtitle: "ملفات المشاريع، بيانات العقود، والإحصائيات والعدادات",
+    icon: MapPin,
+    gateNames: ["view_projects"],
+  },
+  {
+    id: "finance",
+    label: "المالية",
+    subtitle: "مسك الدفاتر، الخزينة، الدفعات، ومالية الشركة والمشاريع",
+    icon: DollarSign,
+    gateNames: ["view_finance_section"],
+  },
+  {
+    id: "company",
+    label: "الشركة",
+    subtitle: "الراتب الشخصي، نسب المشاريع، وتوزيع الأرباح",
+    icon: Building,
+    gateNames: ["view_company_section"],
+  },
+  {
+    id: "operations",
+    label: "التشغيل",
+    subtitle: "الاتفاقيات والعقود، جداول الكميات (BOQ)، والخرائط",
+    icon: PackageOpen,
+    gateNames: ["view_operations_section"],
+  },
+  {
     id: "shops",
-    label: "المتاجر وطلبات الشراء",
+    label: "المتاجر",
     subtitle: "كتالوج المنتجات والتصنيفات وطلبات شراء المشاريع",
     icon: Store,
     gateNames: ["view_shops_section"],
   },
   {
-    id: "crm",
-    label: "إدارة العملاء",
-    subtitle: "سجلات العملاء وإضافة وتعديل بياناتهم",
-    icon: ShieldUser,
-    gateNames: ["view_clients"],
-  },
-  {
-    id: "company",
-    label: "الشركة وتوزيع الحصص",
-    subtitle: "الراتب الشخصي، نسب المشاريع، وتوزيع الأرباح",
-    icon: Building,
-    gateNames: ["view_company_section"],
+    id: "execution-management",
+    label: "اداره التنفيذ",
+    subtitle: "مراحل التنفيذ الميداني، فرق عمل المشاريع، وصلاحياتها",
+    icon: FolderCog,
+    gateNames: ["view_execution_section"],
   },
   {
     id: "tasks",
@@ -111,10 +122,23 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
   },
   {
     id: "settings",
-    label: "الإعدادات وإدارة النظام",
-    subtitle: "المستخدمون، الأدوار، الأقسام، البيانات المرجعية، والسجلات",
+    label: "الإعدادات",
+    subtitle: "المستخدمون، الأدوار، الأقسام، البيانات المرجعية، والنظام",
     icon: Settings,
     gateNames: ["view_settings_section"],
+  },
+  {
+    id: "activity-log",
+    label: "سجل النشاط",
+    subtitle: "سجلات تدقيق النظام، حركات الحسابات، والعمليات",
+    icon: History,
+    gateNames: [
+      "view_audit_logs",
+      "view_finance_logs",
+      "view_access_logs",
+      "view_operations_logs",
+      "view_hr_logs",
+    ],
   },
 ];
 
@@ -187,16 +211,18 @@ const EXPLICIT_MODULE_BY_PERMISSION: Record<string, ModuleId> = {
   // Analytics
   view_analytics_section: "analytics",
 
-  // Projects & Execution
+  // Projects
   view_projects: "projects",
   create_project: "projects",
   view_project_counters: "projects",
   view_all_project_counters: "projects",
-  view_execution_section: "projects",
-  manage_execution: "projects",
-  view_all_project_teams: "projects",
-  manage_project_team: "projects",
-  manage_permissions_project: "projects",
+
+  // Execution Management
+  view_execution_section: "execution-management",
+  manage_execution: "execution-management",
+  view_all_project_teams: "execution-management",
+  manage_project_team: "execution-management",
+  manage_permissions_project: "execution-management",
 
   // Operations (Contracts, BOQ, Maps)
   view_operations_section: "operations",
@@ -210,7 +236,6 @@ const EXPLICIT_MODULE_BY_PERMISSION: Record<string, ModuleId> = {
   create_type_from_template: "operations",
   view_operations_maps: "operations",
   view_operations_settings: "operations",
-  view_operations_logs: "operations",
 
   // Finance
   view_finance_section: "finance",
@@ -224,7 +249,6 @@ const EXPLICIT_MODULE_BY_PERMISSION: Record<string, ModuleId> = {
   print_project_expense_range: "finance",
   create_agreement_payment: "finance",
   create_penalty: "finance",
-  view_finance_logs: "finance",
 
   // HR
   view_hr_section: "hr",
@@ -240,10 +264,28 @@ const EXPLICIT_MODULE_BY_PERMISSION: Record<string, ModuleId> = {
   manage_interview_rounds: "hr",
   view_job_requests: "hr",
   manage_job_requests: "hr",
-  view_hr_logs: "hr",
 
   // Settings & System Admin
   view_settings_section: "settings",
+  manage_roles: "settings",
+  manage_project_roles: "settings",
+  manage_departments: "settings",
+  manage_permissions_company: "settings",
+  manage_reference_data: "settings",
+  manage_specialities: "settings",
+  manage_notifications: "settings",
+  view_user_sessions: "settings",
+  reset_user_password: "settings",
+  manage_website: "settings",
+  manage_evaluation_settings: "settings",
+
+  // Activity Log
+  view_audit_logs: "activity-log",
+  view_finance_logs: "activity-log",
+  view_access_logs: "activity-log",
+  view_operations_logs: "activity-log",
+  view_hr_logs: "activity-log",
+  view_notification_log: "activity-log",
 };
 
 export function resolveModuleForPermission(
@@ -253,6 +295,9 @@ export function resolveModuleForPermission(
   if (explicit) return explicit;
 
   const n = permission.name.toLowerCase();
+  if (n.includes("log") || n.includes("audit")) return "activity-log";
+  if (n.includes("execution")) return "execution-management";
+  if (n.includes("analytic")) return "analytics";
   if (n.includes("shop")) return "shops";
   if (n.includes("client")) return "crm";
   if (n.includes("task")) return "tasks";

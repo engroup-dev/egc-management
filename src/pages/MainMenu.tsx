@@ -112,7 +112,7 @@ const MainMenu = () => {
       label: "سجل النشاط",
       icon: History,
       path: "/settings/activity-log",
-      permission: [...LOG_PERMISSIONS],
+      permission: ["view_audit_logs", ...LOG_PERMISSIONS],
     },
   ];
 

@@ -295,12 +295,13 @@ function invalidateRoleHolders(
 interface AddArgs {
   projectId: string;
   /** employees.id, or contractors.id when personType is "contractor". */
-  personId: string;
+  personId?: string;
+  userId?: string;
   /** Defaults to "employee" — the team. */
   personType?: TeamPersonType;
   projectRoleId: string;
   /** users.id of whoever is making the change. */
-  assignedBy: string | null;
+  assignedBy?: string | null;
 }
 
 export function useAddTeamMember() {
@@ -310,17 +311,23 @@ export function useAddTeamMember() {
     mutationFn: async ({
       projectId,
       personId,
+      userId,
       personType = "employee",
       projectRoleId,
-      assignedBy,
+      assignedBy = null,
     }: AddArgs) => {
+      const resolvedPersonId = personId ?? userId;
+      if (!resolvedPersonId) {
+        throw new Error("personId أو userId مطلوب لإسناد الدور في المشروع.");
+      }
+
       const { data: created, error } =
         personType === "contractor"
           ? await permissionsDb
               .from("project_contractor_roles")
               .insert({
                 project_id: projectId,
-                contractor_id: personId,
+                contractor_id: resolvedPersonId,
                 project_role_id: projectRoleId,
                 assigned_by: assignedBy,
               })
@@ -330,7 +337,7 @@ export function useAddTeamMember() {
               .from("team_assignments")
               .insert({
                 project_id: projectId,
-                person_id: personId,
+                person_id: resolvedPersonId,
                 project_role_id: projectRoleId,
                 assigned_by: assignedBy,
               })

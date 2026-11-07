@@ -19,7 +19,7 @@ export const PERMISSION_CATALOG_KEY = ["permission-catalog"];
 export function usePermissionCatalog() {
   return useQuery<PermissionCatalogRow[]>({
     queryKey: PERMISSION_CATALOG_KEY,
-    ...TIERS.A,
+    staleTime: 60 * 1000,
     queryFn: async () => {
       const { data, error } = await permissionsDb
         .from("permission_catalog")
