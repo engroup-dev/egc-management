@@ -130,24 +130,24 @@ export default function StartDateCell({
         <Tooltip label={tooltip}>
           <button
             onClick={() => !locked && setOpen((v) => !v)}
-            className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-500 ${
-              locked ? "cursor-default" : "hover:bg-gray-100"
+            className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-slate-100 border border-slate-200/80 px-3 py-1.5 text-[13px] font-bold text-slate-700 ${
+              locked ? "cursor-default" : "hover:bg-slate-200"
             }`}
           >
-            {linked && !isSummary && <Link2 className="h-3 w-3 shrink-0 text-primary" />}
+            {linked && !isSummary && <Link2 className="h-3.5 w-3.5 shrink-0 text-primary" />}
             {daysPassedLabel(startDate)}
-            {linked && lagDays > 0 && <span className="text-[10px] font-semibold text-amber-600">+{lagDays}</span>}
+            {linked && lagDays > 0 && <span className="text-[10px] font-bold text-amber-600">+{lagDays}</span>}
           </button>
         </Tooltip>
       ) : readOnly ? (
-        <span className="whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] text-gray-300">غير مجدولة</span>
+        <span className="whitespace-nowrap rounded-lg px-3 py-1.5 text-[13px] text-slate-400 font-medium">غير محددة</span>
       ) : (
         <button
           onClick={() => setOpen((v) => !v)}
-          className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-dashed border-gray-200 px-2 py-0.5 text-[11px] text-gray-400 hover:border-gray-300 hover:text-gray-500"
+          className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-[13px] font-bold text-slate-500 hover:border-slate-400 hover:text-slate-700"
           title="المهمة غير مجدولة — اختر تاريخ البدء"
         >
-          <CalendarDays className="h-3 w-3" />
+          <CalendarDays className="h-3.5 w-3.5" />
           غير مجدولة
         </button>
       )}

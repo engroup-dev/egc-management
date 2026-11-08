@@ -26,6 +26,7 @@ export interface DirectoryFilterState {
   /** Empty = every priority, including unset. */
   priorities: Set<Priority | "none">;
   overdueOnly: boolean;
+  delayedStartOnly?: boolean;
   /** Empty = every project. PROJECT_NONE_KEY = tasks with no project. */
   projectIds: Set<string>;
   /** Empty = every assignee. ASSIGNEE_NONE_KEY = unassigned tasks. */
@@ -48,6 +49,7 @@ export function createDefaultFilters(): DirectoryFilterState {
     customStatusIds: new Set(),
     priorities: new Set(),
     overdueOnly: false,
+    delayedStartOnly: false,
     projectIds: new Set(),
     assigneeIds: new Set(),
     taskTypeIds: new Set(),
@@ -65,6 +67,7 @@ export function countActiveFilters(filters: DirectoryFilterState): number {
   if (filters.statusMode !== "open") n++;
   if (filters.priorities.size > 0) n++;
   if (filters.overdueOnly) n++;
+  if (filters.delayedStartOnly) n++;
   if (filters.projectIds.size > 0) n++;
   if (filters.assigneeIds.size > 0) n++;
   if (filters.taskTypeIds.size > 0) n++;
@@ -106,6 +109,16 @@ export function filterDirectoryTasks(tasks: TaskRow[], filters: DirectoryFilterS
     if (filters.priorities.size > 0 && !filters.priorities.has(task.priority ?? "none")) return false;
 
     if (filters.overdueOnly && !task.is_overdue) return false;
+
+    if (filters.delayedStartOnly) {
+      const today = new Date().toISOString().split("T")[0];
+      const notStartedStatusIds = new Set(
+        data.statuses.filter((s) => s.category === "not_started").map((s) => s.id),
+      );
+      if (!notStartedStatusIds.has(task.status_id) || !task.start_date || task.start_date > today) {
+        return false;
+      }
+    }
 
     if (filters.projectIds.size > 0 && !filters.projectIds.has(task.project_id ?? PROJECT_NONE_KEY)) return false;
 

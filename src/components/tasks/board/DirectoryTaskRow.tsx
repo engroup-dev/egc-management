@@ -15,6 +15,7 @@ import Tooltip from "../../ui/Tooltip";
 import type { DependencyPair, StatusRow, TaskRow as TaskRowType, TaskTypeLite, TagLite } from "../../../hooks/tasks/useTaskBoard";
 import type { AssignablePerson } from "../../../hooks/tasks/useAssignablePeople";
 import { NO_CAPS, taskRowCaps, useMyTaskAccess } from "../../../hooks/tasks/useTaskAccess";
+import { useDirectoryColumns } from "./DirectoryColumnContext";
 
 // A leaner sibling of board/TaskRow.tsx for the cross-board directory
 // views (AssigneeViewPage, TaskTypeViewPage) — same inline-edit cells
@@ -50,18 +51,18 @@ export function directoryRowGridStyle({
   showSource = false,
   showCompleted = false,
 }: DirectoryColumnOptions = {}): CSSProperties {
-  const tracks = ["minmax(0,1fr)"]; // title
-  if (showSource) tracks.push("150px");
-  tracks.push("120px"); // status
-  if (showPriority) tracks.push("84px");
-  tracks.push("96px", "92px", "92px"); // team, start date, due date
-  if (showCompleted) tracks.push("104px");
+  const tracks = ["minmax(320px, 2fr)"]; // title
+  if (showSource) tracks.push("160px"); // zone
+  tracks.push("140px"); // status
+  if (showPriority) tracks.push("100px"); // priority
+  tracks.push("130px", "130px", "130px"); // team, start date, due date
+  if (showCompleted) tracks.push("135px");
 
   return {
     display: "grid",
     gridTemplateColumns: tracks.join(" "),
     alignItems: "center",
-    gap: "0.5rem",
+    gap: "1rem",
   };
 }
 
@@ -165,15 +166,19 @@ export default function DirectoryTaskRow({
   );
   const linkMenu = useRowLinkMenu();
   const flags = dependencyFlags.get(task.id);
+  const dirColumns = useDirectoryColumns();
+  const rowGridStyle = dirColumns
+    ? dirColumns.getGridStyle({ showPriority, showSource, showCompleted })
+    : directoryRowGridStyle({ showPriority, showSource, showCompleted });
 
   return (
     <>
     <div
       onContextMenu={linkEditing ? linkMenu.onContextMenu : undefined}
-      style={directoryRowGridStyle({ showPriority, showSource, showCompleted })}
-      className="min-h-[34px] border-b border-gray-100 px-2 hover:bg-gray-50"
+      style={rowGridStyle}
+      className="min-h-[58px] border-b border-slate-200 px-4 py-3 transition-colors hover:bg-blue-50/50 even:bg-slate-50/50"
     >
-      <div className="flex min-w-0 items-center gap-1">
+      <div className="flex min-w-0 items-center gap-1.5">
         <TaskTypeCell
           taskTypes={taskTypes}
           currentTaskTypeId={task.task_type_id}
@@ -184,24 +189,24 @@ export default function DirectoryTaskRow({
         {/* Separate overflow-hidden wrapper from TaskTypeCell above — see
             board/TaskRow.tsx's identical note: an overflow-hidden ancestor
             clips its popover otherwise. */}
-        <div ref={linkMenu.titleRef} className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+        <div ref={linkMenu.titleRef} className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
           {parentTitle && task.parent_task_id && (
             <button
               onClick={() => onOpenTask(task.parent_task_id as string)}
-              className="shrink-0 truncate text-xs text-gray-400 hover:underline"
+              className="shrink-0 truncate text-sm text-slate-400 hover:text-slate-600 hover:underline"
               title={parentTitle}
             >
               ↳ {parentTitle}
             </button>
           )}
-          <button onClick={() => onOpenTask(task.id)} className="truncate text-sm text-gray-800 hover:underline">
+          <button onClick={() => onOpenTask(task.id)} className="truncate text-[16px] font-bold text-slate-900 hover:text-primary hover:underline transition-colors leading-normal">
             {task.title}
           </button>
           {titleBadge}
 
           {tags.length > 0 && (
             <span
-              className="shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+              className="shrink-0 whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-bold"
               style={{ background: `${tags[0].color ?? "#6B7280"}1A`, color: tags[0].color ?? "#6B7280" }}
             >
               {tags[0].name}
@@ -209,7 +214,7 @@ export default function DirectoryTaskRow({
           )}
           {tags.length > 1 && (
             <Tooltip label={tags.slice(1).map((t) => t.name).join("، ")}>
-              <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+              <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600">
                 +{tags.length - 1}
               </span>
             </Tooltip>
@@ -217,7 +222,7 @@ export default function DirectoryTaskRow({
 
           {linkedTaskIds.has(task.id) && (
             <Tooltip label="مرتبطة بسجل">
-              <Link2 className="h-3 w-3 shrink-0 text-blue-400" aria-label="مرتبطة بسجل" />
+              <Link2 className="h-4 w-4 shrink-0 text-blue-500" aria-label="مرتبطة بسجل" />
             </Tooltip>
           )}
           {linkEditing ? (
@@ -227,22 +232,22 @@ export default function DirectoryTaskRow({
           )}
           {unmetRequirementTaskIds.has(task.id) && (
             <Tooltip label="متطلبات غير مكتملة">
-              <Camera className="h-3 w-3 shrink-0 text-amber-500" aria-label="متطلبات غير مكتملة" />
+              <Camera className="h-4 w-4 shrink-0 text-amber-500" aria-label="متطلبات غير مكتملة" />
             </Tooltip>
           )}
           {hasDescription && (
             <Tooltip label="تحتوي على وصف">
-              <AlignLeft className="h-3 w-3 shrink-0 text-blue-500" aria-label="تحتوي على وصف" />
+              <AlignLeft className="h-4 w-4 shrink-0 text-blue-500" aria-label="تحتوي على وصف" />
             </Tooltip>
           )}
           {attachedTaskIds.has(task.id) && (
             <Tooltip label="تحتوي على مرفقات">
-              <Paperclip className="h-3 w-3 shrink-0 text-blue-500" aria-label="تحتوي على مرفقات" />
+              <Paperclip className="h-4 w-4 shrink-0 text-blue-500" aria-label="تحتوي على مرفقات" />
             </Tooltip>
           )}
           {commentedTaskIds.has(task.id) && (
             <Tooltip label="تحتوي على تعليقات">
-              <MessageSquare className="h-3 w-3 shrink-0 text-blue-500" aria-label="تحتوي على تعليقات" />
+              <MessageSquare className="h-4 w-4 shrink-0 text-blue-500" aria-label="تحتوي على تعليقات" />
             </Tooltip>
           )}
         </div>
@@ -252,6 +257,7 @@ export default function DirectoryTaskRow({
         <TaskSourceCell
           spaceName={spaceNameByBoardId?.get(task.board_id)}
           boardName={boardNamesById?.get(task.board_id)}
+          boardId={task.board_id}
         />
       )}
 

@@ -257,16 +257,6 @@ const TasksLayoutInner = () => {
               <UserCog className="h-5 w-5" />
             </Link>
           </Tooltip>
-          <Tooltip label="حسب نوع المهمة" side="left">
-            <Link to="/tasks/by-type" className="rounded-lg p-2 text-gray-500 hover:bg-gray-100">
-              <Shapes className="h-5 w-5" />
-            </Link>
-          </Tooltip>
-          <Tooltip label="حسب المشروع" side="left">
-            <Link to="/tasks/by-project" className="rounded-lg p-2 text-gray-500 hover:bg-gray-100">
-              <FolderKanban className="h-5 w-5" />
-            </Link>
-          </Tooltip>
           {canSeeDashboard && (
             <Tooltip label="لوحة المعلومات" side="left">
               <Link to="/tasks/dashboard" className="rounded-lg p-2 text-gray-500 hover:bg-gray-100">
@@ -455,29 +445,15 @@ const TasksLayoutInner = () => {
                   <span className="flex-1 truncate">أعمالي</span>
                   <CountBadge count={data?.myWorkCount ?? 0} />
                 </Link>
-                {canBrowse && (<>
-                <Link
-                  to="/tasks/by-assignee"
-                  className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
-                >
-                  <UserCog className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-                  <span className="flex-1 truncate">حسب الموظف</span>
-                </Link>
-                <Link
-                  to="/tasks/by-type"
-                  className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
-                >
-                  <Shapes className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-                  <span className="flex-1 truncate">حسب نوع المهمة</span>
-                </Link>
-                <Link
-                  to="/tasks/by-project"
-                  className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
-                >
-                  <FolderKanban className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-                  <span className="flex-1 truncate">حسب المشروع</span>
-                </Link>
-                </>)}
+                {canBrowse && (
+                  <Link
+                    to="/tasks/by-assignee"
+                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
+                  >
+                    <UserCog className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                    <span className="flex-1 truncate">حسب الموظف</span>
+                  </Link>
+                )}
                 {canSeeDashboard && (
                   <Link
                     to="/tasks/dashboard"

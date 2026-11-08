@@ -1,6 +1,7 @@
 import { cloneElement, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { Plus, MoreHorizontal, ChevronsDown, ChevronsUp, ArrowDownWideNarrow, ArrowUpNarrowWide, Eye, EyeOff } from "lucide-react";
+import { Plus, MoreHorizontal, ChevronsDown, ChevronsUp, ArrowDownWideNarrow, ArrowUpNarrowWide, Eye, EyeOff, Clock, RotateCcw } from "lucide-react";
 import TaskRow, { rowGridStyle } from "./TaskRow";
+import { BoardColumnProvider, useBoardColumns, ResizableBoardHeaderCell } from "./BoardColumnContext";
 import BulkActionPanel from "./BulkActionPanel";
 import { useBoardAccess } from "../BoardAccessContext";
 import { taskRowCaps } from "../../../hooks/tasks/useTaskAccess";
@@ -90,7 +91,7 @@ interface TaskTableProps {
   onCopySelectedToZones?: (taskIds: string[]) => void;
 }
 
-export default function TaskTable({
+function TaskTableInner({
   boardId,
   boardZoneId,
   zoneName,
@@ -187,6 +188,16 @@ export default function TaskTable({
       t.parent_task_id && !shownIds.has(t.parent_task_id) ? { ...t, parent_task_id: null } : t,
     );
   }, [tasks, statusById, showCompleted]);
+
+  const totalDurationDays = useMemo(() => {
+    const tasksToCount = visibleTasks.filter((t) => !t.is_summary);
+    return tasksToCount.reduce((sum, t) => sum + (t.duration_days ?? 0), 0);
+  }, [visibleTasks]);
+
+  const boardColumns = useBoardColumns();
+  const currentGridStyle = boardColumns
+    ? boardColumns.getGridStyle(customColumns.length, featureSettings.priorities)
+    : rowGridStyle(customColumns.length, featureSettings.priorities);
 
   // Drop selected ids whose task is gone (deleted here or elsewhere,
   // archived) or no longer on screen (completed and hidden) so counts and
@@ -415,127 +426,175 @@ export default function TaskTable({
 
   return (
     <div className="relative flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2">
-        <select
-          value={groupBy}
-          onChange={(e) => setGroupBy(e.target.value as GroupBy)}
-          className="rounded-md border border-gray-200 bg-white px-2 py-1 text-sm text-gray-600 outline-none"
-        >
-          {(Object.keys(GROUP_LABELS) as GroupBy[])
-            .filter((g) => g !== "task_type" || featureSettings.task_types)
-            .map((g) => (
-              <option key={g} value={g}>
-                {GROUP_LABELS[g]}
-              </option>
-            ))}
-        </select>
-        <div className="flex items-center gap-1.5">
+      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2.5 shadow-2xs">
+        <div className="flex items-center gap-3">
           <select
-            value={sort.key}
-            onChange={(e) => {
-              const key = e.target.value as TaskSortKey;
-              setSort({ key, dir: taskSortOption(key).defaultDir });
-            }}
-            className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 outline-none"
-            title="ترتيب المهام"
+            value={groupBy}
+            onChange={(e) => setGroupBy(e.target.value as GroupBy)}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 outline-none hover:border-slate-300"
           >
-            {TASK_SORT_OPTIONS.map((o) => (
-              <option key={o.key} value={o.key}>
-                ترتيب: {o.label}
-              </option>
-            ))}
+            {(Object.keys(GROUP_LABELS) as GroupBy[])
+              .filter((g) => g !== "task_type" || featureSettings.task_types)
+              .map((g) => (
+                <option key={g} value={g}>
+                  {GROUP_LABELS[g]}
+                </option>
+              ))}
           </select>
+
+          {/* Total Duration Badge */}
+          <div className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50/80 px-3.5 py-1.5 text-xs font-bold text-blue-800 shadow-2xs">
+            <Clock className="h-4 w-4 text-blue-600 shrink-0" />
+            <span>المدة الإجمالية للمهام:</span>
+            <span className="text-sm font-black text-blue-900">{totalDurationDays} يوم</span>
+          </div>
+
           <button
-            onClick={() => setSort({ ...sort, dir: sort.dir === "asc" ? "desc" : "asc" })}
-            className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
-            title={canDrag ? "عكس الاتجاه" : "عكس الاتجاه — السحب والإفلات متاح في الترتيب اليدوي فقط"}
+            onClick={boardColumns?.resetWidths}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-slate-700 transition-colors"
+            title="إعادة ضبط عرض الأعمدة"
           >
-            {sort.dir === "asc" ? <ArrowUpNarrowWide className="h-3.5 w-3.5" /> : <ArrowDownWideNarrow className="h-3.5 w-3.5" />}
-            {sort.dir === "asc" ? taskSortOption(sort.key).ascLabel : taskSortOption(sort.key).descLabel}
+            <RotateCcw className="h-3 w-3" />
+            <span>إعادة ضبط الأعمدة</span>
           </button>
-          <span className="mx-1 h-4 w-px bg-gray-200" />
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Sort Control */}
+          <div className="flex items-center rounded-xl border border-slate-200 bg-white shadow-2xs overflow-hidden">
+            <select
+              value={sort.key}
+              onChange={(e) => {
+                const key = e.target.value as TaskSortKey;
+                setSort({ key, dir: taskSortOption(key).defaultDir });
+              }}
+              className="bg-transparent px-3 py-1.5 text-xs font-bold text-slate-700 outline-none cursor-pointer"
+              title="ترتيب المهام"
+            >
+              {TASK_SORT_OPTIONS.map((o) => (
+                <option key={o.key} value={o.key}>
+                  ترتيب: {o.label}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => setSort({ ...sort, dir: sort.dir === "asc" ? "desc" : "asc" })}
+              className="border-r border-slate-200 px-2.5 py-1.5 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+              title={canDrag ? "عكس اتجاه الترتيب" : "عكس الاتجاه — السحب والإفلات متاح في الترتيب اليدوي فقط"}
+            >
+              {sort.dir === "asc" ? <ArrowUpNarrowWide className="h-4 w-4" /> : <ArrowDownWideNarrow className="h-4 w-4" />}
+            </button>
+          </div>
+
+          {/* Show / Hide Completed */}
           <button
             onClick={() => setShowCompleted((v) => !v)}
-            className={`flex items-center gap-1 rounded-md border px-2 py-1 text-xs ${
+            className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition-all shadow-2xs ${
               showCompleted
-                ? "border-primary bg-primary-superLight text-primary"
-                : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                ? "border-primary bg-primary text-white shadow-xs"
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300"
             }`}
             title={showCompleted ? "إخفاء المهام المكتملة" : "إظهار المهام المكتملة"}
           >
-            {showCompleted ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-            {showCompleted ? "إخفاء المكتملة" : "إظهار المكتملة"}
-            {completedCount > 0 && <span className="text-gray-400">({completedCount})</span>}
+            {showCompleted ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4 text-slate-400" />}
+            <span>{showCompleted ? "إخفاء المكتملة" : "إظهار المكتملة"}</span>
+            {completedCount > 0 && (
+              <span
+                className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${
+                  showCompleted ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                {completedCount}
+              </span>
+            )}
           </button>
-          <button
-            onClick={expandAll}
-            className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
-          >
-            <ChevronsDown className="h-3.5 w-3.5" />
-            توسيع الكل
-          </button>
-          <button
-            onClick={collapseAll}
-            className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
-          >
-            <ChevronsUp className="h-3.5 w-3.5" />
-            طي الكل
-          </button>
+
+          {/* Clear, Prominent Expand All / Collapse All Segmented Control */}
+          <div className="flex items-center overflow-hidden rounded-xl border border-slate-200 bg-slate-100 p-0.5 shadow-2xs">
+            <button
+              onClick={expandAll}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-white hover:text-primary hover:shadow-xs transition-all"
+              title="توسيع كل المهام الفرعية والبنود"
+            >
+              <ChevronsDown className="h-4 w-4 text-primary" />
+              <span>توسيع الكل</span>
+            </button>
+            <div className="h-4 w-px bg-slate-300" />
+            <button
+              onClick={collapseAll}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-white hover:text-slate-900 hover:shadow-xs transition-all"
+              title="طي كل المهام الفرعية"
+            >
+              <ChevronsUp className="h-4 w-4 text-slate-400" />
+              <span>طي الكل</span>
+            </button>
+          </div>
         </div>
       </div>
 
       {panelMounted && lastPanelElement.current}
 
-      <div
-        style={rowGridStyle(customColumns.length, featureSettings.priorities)}
-        className="sticky top-0 z-10 border-b border-gray-200 bg-gray-50 px-2 py-2 text-xs font-semibold text-gray-500"
-      >
-        <div className="flex min-w-0 items-center gap-1">
-          {/* same slot order as TaskRow: drag grip, then the checkbox */}
-          <span className="w-4 shrink-0" />
-          <span className="flex w-4 shrink-0 items-center">
-            {selectableIds.length > 0 && (
-              <input
-                ref={selectAllRef}
-                type="checkbox"
-                checked={allSelected}
-                onChange={() => (allSelected ? clearSelection() : selectAll())}
-                className="h-3.5 w-3.5 cursor-pointer"
-                title={allSelected ? "إلغاء تحديد الكل" : "تحديد الكل"}
+      <div className="flex-1 overflow-x-auto overflow-y-auto scrollbar-thin">
+        <div
+          style={currentGridStyle}
+          className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/95 px-3 py-2.5 text-xs font-bold text-slate-700 shadow-2xs select-none backdrop-blur-xs"
+        >
+          <ResizableBoardHeaderCell columnKey="title">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="w-4 shrink-0" />
+              <span className="flex w-4 shrink-0 items-center">
+                {selectableIds.length > 0 && (
+                  <input
+                    ref={selectAllRef}
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={() => (allSelected ? clearSelection() : selectAll())}
+                    className="h-3.5 w-3.5 cursor-pointer"
+                    title={allSelected ? "إلغاء تحديد الكل" : "تحديد الكل"}
+                  />
+                )}
+              </span>
+              <span>عنوان المهمة</span>
+            </div>
+          </ResizableBoardHeaderCell>
+
+          <ResizableBoardHeaderCell columnKey="status">الحالة</ResizableBoardHeaderCell>
+          {featureSettings.priorities && (
+            <ResizableBoardHeaderCell columnKey="priority">الأولوية</ResizableBoardHeaderCell>
+          )}
+          <ResizableBoardHeaderCell columnKey="team">الفريق</ResizableBoardHeaderCell>
+          <ResizableBoardHeaderCell columnKey="startDate">تاريخ البدء</ResizableBoardHeaderCell>
+          <ResizableBoardHeaderCell columnKey="duration">
+            <div title="أيام العمل (بدون الجمعة)" className="flex items-center gap-1">
+              <span>المدة</span>
+            </div>
+          </ResizableBoardHeaderCell>
+          <ResizableBoardHeaderCell columnKey="dueDate">الاستحقاق</ResizableBoardHeaderCell>
+          <ResizableBoardHeaderCell columnKey="department">القسم</ResizableBoardHeaderCell>
+
+          {customColumns.map((col, idx) => (
+            <ResizableBoardHeaderCell key={col.boardColumnId} columnKey={`custom_${idx}`}>
+              <CustomColumnHeader
+                column={col}
+                canManage={spaceCaps.manage}
+                onRename={(name_ar) => onRenameField(col.fieldDefinitionId, name_ar)}
+                onDetach={() => onDetachColumn(col.boardColumnId)}
+                onHide={() => onSetColumnVisibility(col.boardColumnId, false)}
               />
-            )}
-          </span>
-          عنوان المهمة
+            </ResizableBoardHeaderCell>
+          ))}
+
+          {spaceCaps.manage ? (
+            <button
+              onClick={() => setShowColumnEditor(true)}
+              title="إضافة عمود"
+              className="flex items-center justify-center text-slate-400 hover:text-slate-600"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          ) : (
+            <div />
+          )}
         </div>
-        <div>الحالة</div>
-        {featureSettings.priorities && <div>الأولوية</div>}
-        <div>الفريق</div>
-        <div>تاريخ البدء</div>
-        <div title="أيام العمل (بدون الجمعة)">المدة</div>
-        <div>الاستحقاق</div>
-        <div>القسم</div>
-        {customColumns.map((col) => (
-          <CustomColumnHeader
-            key={col.boardColumnId}
-            column={col}
-            canManage={spaceCaps.manage}
-            onRename={(name_ar) => onRenameField(col.fieldDefinitionId, name_ar)}
-            onDetach={() => onDetachColumn(col.boardColumnId)}
-            onHide={() => onSetColumnVisibility(col.boardColumnId, false)}
-          />
-        ))}
-        {spaceCaps.manage ? (
-          <button
-            onClick={() => setShowColumnEditor(true)}
-            title="إضافة عمود"
-            className="flex items-center justify-center text-gray-300 hover:text-gray-500"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-        ) : (
-          <div />
-        )}
-      </div>
 
       {showColumnEditor && (
         <ColumnEditorModal
@@ -554,7 +613,7 @@ export default function TaskTable({
         />
       )}
 
-      <div className="flex-1 overflow-y-auto">
+      <div>
         {groups.map((group) => (
           <div key={group.key}>
             {group.label && (
@@ -638,7 +697,42 @@ export default function TaskTable({
           </button>
         )}
       </div>
+
+      {/* Sticky Footer Summary Row */}
+      {visibleTasks.length > 0 && (
+        <div
+          style={currentGridStyle}
+          className="sticky bottom-0 z-10 border-t-2 border-slate-200 bg-slate-50/95 px-3 py-2 text-xs font-bold text-slate-700 shadow-sm backdrop-blur-xs"
+        >
+          <div className="flex items-center gap-2 font-bold text-slate-800 pr-8">
+            <span>الإجمالي:</span>
+            <span className="text-slate-500 font-medium">({visibleTasks.length} مهام)</span>
+          </div>
+          <div />
+          {featureSettings.priorities && <div />}
+          <div />
+          <div />
+          <div className="flex items-center justify-center font-black text-blue-700 bg-blue-100/90 border border-blue-200 rounded-md py-1 px-1.5 text-xs shadow-2xs">
+            {totalDurationDays} يوم
+          </div>
+          <div />
+          <div />
+          {customColumns.map((col) => (
+            <div key={col.boardColumnId} />
+          ))}
+          <div />
+        </div>
+      )}
+      </div>
     </div>
+  );
+}
+
+export default function TaskTable(props: TaskTableProps) {
+  return (
+    <BoardColumnProvider>
+      <TaskTableInner {...props} />
+    </BoardColumnProvider>
   );
 }
 

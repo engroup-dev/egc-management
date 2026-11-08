@@ -40,7 +40,7 @@ export default function PriorityCell({ priority, onChange, align = "right", read
         <Badge
           label={PRIORITY_LABELS[priority]}
           variant={PRIORITY_VARIANTS[priority]}
-          size="sm"
+          size="lg"
           onClick={() => !readOnly && setOpen((v) => !v)}
         />
       ) : (
@@ -63,7 +63,7 @@ export default function PriorityCell({ priority, onChange, align = "right", read
               }}
               className="flex w-full items-center px-3 py-1.5 text-right text-sm hover:bg-gray-50"
             >
-              <Badge label={PRIORITY_LABELS[p]} variant={PRIORITY_VARIANTS[p]} size="sm" />
+              <Badge label={PRIORITY_LABELS[p]} variant={PRIORITY_VARIANTS[p]} size="md" />
             </button>
           ))}
           {priority && (

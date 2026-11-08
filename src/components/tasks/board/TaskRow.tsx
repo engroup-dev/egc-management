@@ -1,6 +1,6 @@
-import { useState, type CSSProperties } from "react";
+import { useState, useMemo, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronDown, ChevronLeft, GripVertical, Plus, Link2, Camera, Paperclip, MessageSquare, AlignLeft, Pencil } from "lucide-react";
+import { ChevronDown, ChevronLeft, GripVertical, Plus, Link2, Camera, Paperclip, MessageSquare, AlignLeft, Pencil, Clock } from "lucide-react";
 import StatusCell from "./StatusCell";
 import PriorityCell from "./PriorityCell";
 import DateCell from "./DateCell";
@@ -15,6 +15,7 @@ import CustomFieldCell from "./CustomFieldCell";
 import TaskTypeCell from "./TaskTypeCell";
 import Tooltip from "../../ui/Tooltip";
 import { RowDependencyIcons, RowLinkOverlays, useRowLinkMenu } from "./RowLinkMenu";
+import { useBoardColumns } from "./BoardColumnContext";
 import type { DependencyFlags, TaskLinks } from "../../../hooks/tasks/dependencyFlags";
 import type {
   CustomColumn,
@@ -160,8 +161,29 @@ export default function TaskRow({
   const linkMenu = useRowLinkMenu();
   const children = childrenByParent.get(task.id) ?? [];
   const hasChildren = children.length > 0;
+  const isCategoryHeader = hasChildren && depth === 0;
   const collapsed = collapsedIds.has(task.id);
   const siblings = childrenByParent.get(task.parent_task_id) ?? [];
+
+  const childrenTotalDuration = useMemo(() => {
+    if (!hasChildren) return 0;
+    let sum = 0;
+    const visited = new Set<string>();
+    const walk = (items: TaskRowType[]) => {
+      for (const item of items) {
+        if (!item || visited.has(item.id)) continue;
+        visited.add(item.id);
+        const itemSubs = childrenByParent.get(item.id) ?? [];
+        if (itemSubs.length > 0) {
+          walk(itemSubs);
+        } else {
+          sum += item.duration_days ?? 0;
+        }
+      }
+    };
+    walk(children);
+    return sum;
+  }, [hasChildren, children, childrenByParent]);
   // Only provided on template boards: roles sit next to the people.
   const templateRoles = useTemplateRoles();
   // What I may do on THIS task: the space's rights, plus an assignee's own.
@@ -202,6 +224,10 @@ export default function TaskRow({
   const statusCategory = statuses.find((s) => s.id === task.status_id)?.category;
   const flags = dependencyFlags.get(task.id);
   const openTask = () => navigate(`/tasks/board/${boardId}/task/${task.id}`);
+  const boardColumns = useBoardColumns();
+  const currentGridStyle = boardColumns
+    ? boardColumns.getGridStyle(customColumns.length, showPriority)
+    : rowGridStyle(customColumns.length, showPriority);
 
   return (
     <>
@@ -218,8 +244,12 @@ export default function TaskRow({
         }}
         onDragLeave={() => setDropZone(null)}
         onDrop={handleDrop}
-        style={rowGridStyle(customColumns.length, showPriority)}
-        className={`min-h-[34px] border-b border-gray-100 px-2 hover:bg-gray-50 ${selected ? "bg-primary-superLight/60" : ""} ${
+        style={currentGridStyle}
+        className={`transition-colors min-h-[44px] px-3 py-2 ${
+          isCategoryHeader
+            ? "border-t-2 border-t-slate-300 border-b border-b-slate-200 bg-slate-50/90 hover:bg-slate-100/90 font-bold mt-3"
+            : `border-b border-slate-100 hover:bg-blue-50/40 ${depth > 0 ? "bg-white" : ""}`
+        } ${selected ? "bg-primary-superLight/60" : ""} ${
           dropZone === "before"
             ? "border-t-2 border-t-primary"
             : dropZone === "after"
@@ -230,8 +260,8 @@ export default function TaskRow({
         }`}
       >
         <div
-          className="flex min-w-0 items-center gap-1"
-          style={{ paddingRight: depth * 20 }}
+          className="flex min-w-0 items-center gap-1.5"
+          style={{ paddingRight: depth > 0 ? depth * 22 + 8 : 0 }}
         >
           <span className="w-4 shrink-0 text-gray-300">
             {hovered && canDrag && rowCaps.edit && (
@@ -248,7 +278,7 @@ export default function TaskRow({
               </span>
             )}
           </span>
-          {onToggleSelect && rowCaps.status && (
+          {onToggleSelect && rowCaps.status && !isCategoryHeader && (
             <span className="flex w-4 shrink-0 items-center">
               {showSelect && (
                 <input
@@ -265,16 +295,17 @@ export default function TaskRow({
           {hasChildren ? (
             <button
               onClick={() => onToggleCollapse(task.id)}
-              className="shrink-0 text-gray-400 hover:text-gray-600"
+              className="shrink-0 rounded p-0.5 text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition-colors cursor-pointer"
+              title={collapsed ? "توسيع" : "طي"}
             >
               {collapsed ? (
-                <ChevronLeft className="h-3.5 w-3.5" />
+                <ChevronLeft className={isCategoryHeader ? "h-4.5 w-4.5" : "h-4 w-4"} />
               ) : (
-                <ChevronDown className="h-3.5 w-3.5" />
+                <ChevronDown className={isCategoryHeader ? "h-4.5 w-4.5" : "h-4 w-4"} />
               )}
             </button>
           ) : (
-            <span className="w-3.5 shrink-0" />
+            <span className="w-4 shrink-0" />
           )}
 
           {showTaskType && (
@@ -286,11 +317,7 @@ export default function TaskRow({
             />
           )}
 
-          {/* Separate overflow-hidden wrapper from TaskTypeCell above: its
-              popover is position:absolute off a `relative` ancestor inside
-              here, and an overflow-hidden ancestor clips absolutely
-              positioned descendants too, not just overflowing text. */}
-          <div ref={linkMenu.titleRef} className="group/title flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+          <div ref={linkMenu.titleRef} className="group/title flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
             {editingTitle ? (
               <input
                 autoFocus
@@ -318,7 +345,11 @@ export default function TaskRow({
                       setEditingTitle(true);
                     }
                   }}
-                  className="truncate text-sm text-gray-800 hover:underline"
+                  className={`truncate hover:text-primary hover:underline transition-colors ${
+                    isCategoryHeader
+                      ? "text-[17px] font-black text-slate-900 tracking-wide"
+                      : "text-[13.5px] font-semibold text-slate-800"
+                  }`}
                 >
                   {task.title}
                 </button>
@@ -334,33 +365,41 @@ export default function TaskRow({
               </>
             )}
 
-            {tags.length > 0 && (
-              <span
-                className="shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-medium"
-                style={{ background: `${tags[0].color ?? "#6B7280"}1A`, color: tags[0].color ?? "#6B7280" }}
-              >
-                {tags[0].name}
+            {isCategoryHeader ? (
+              <span className="shrink-0 rounded-md bg-slate-200/90 px-1.5 py-0.5 text-[11px] font-bold text-slate-700">
+                {children.length} مهام
               </span>
-            )}
-            {tags.length > 1 && (
-              <Tooltip label={tags.slice(1).map((t) => t.name).join("، ")}>
-                <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
-                  +{tags.length - 1}
-                </span>
-              </Tooltip>
-            )}
+            ) : (
+              <>
+                {tags.length > 0 && (
+                  <span
+                    className="shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                    style={{ background: `${tags[0].color ?? "#6B7280"}1A`, color: tags[0].color ?? "#6B7280" }}
+                  >
+                    {tags[0].name}
+                  </span>
+                )}
+                {tags.length > 1 && (
+                  <Tooltip label={tags.slice(1).map((t) => t.name).join("، ")}>
+                    <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+                      +{tags.length - 1}
+                    </span>
+                  </Tooltip>
+                )}
 
-            {progress && (
-              <span
-                className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                  progress.done === progress.total
-                    ? "bg-emerald-50 text-emerald-600"
-                    : "bg-gray-100 text-gray-500"
-                }`}
-                title="المهام الفرعية المكتملة"
-              >
-                {progress.done}/{progress.total}
-              </span>
+                {progress && (
+                  <span
+                    className={`shrink-0 rounded-lg px-2.5 py-0.5 text-xs font-bold border ${
+                      progress.done === progress.total
+                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                        : "bg-slate-100 text-slate-600 border-slate-200"
+                    }`}
+                    title="المهام الفرعية المكتملة"
+                  >
+                    {progress.done}/{progress.total} مكتملة
+                  </span>
+                )}
+              </>
             )}
 
             {linkedTaskIds.has(task.id) && (
@@ -392,7 +431,6 @@ export default function TaskRow({
 
             {hovered && rowCaps.create && (
               <button
-                // a subtask needs a start and days: the create dialog
                 onClick={() => onCreateTask("", task.id)}
                 className="shrink-0 rounded p-0.5 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
                 title="إضافة مهمة فرعية"
@@ -403,62 +441,127 @@ export default function TaskRow({
           </div>
         </div>
 
-        <StatusCell
-          statuses={statuses}
-          currentStatusId={task.status_id}
-          onChange={(statusId) => onChangeStatus(task.id, statusId)}
-          readOnly={!rowCaps.status}
-        />
-        {showPriority && (
-          <PriorityCell
-            priority={task.priority}
-            onChange={(priority) => onChangePriority(task.id, priority)}
-            readOnly={!rowCaps.edit}
+        {/* Status Column */}
+        {isCategoryHeader ? (
+          <div className="flex items-center">
+            {progress && progress.total > 0 ? (
+              <span
+                className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-bold border ${
+                  progress.done === progress.total
+                    ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                    : progress.done > 0
+                      ? "bg-blue-50 text-blue-800 border-blue-200"
+                      : "bg-slate-100 text-slate-600 border-slate-200"
+                }`}
+              >
+                {progress.done === progress.total
+                  ? "مكتمل"
+                  : progress.done > 0
+                    ? `${progress.done}/${progress.total} منجز`
+                    : "لم يبدأ"}
+              </span>
+            ) : null}
+          </div>
+        ) : (
+          <StatusCell
+            statuses={statuses}
+            currentStatusId={task.status_id}
+            onChange={(statusId) => onChangeStatus(task.id, statusId)}
+            readOnly={!rowCaps.status}
           />
         )}
-        <div className="flex items-center gap-1">
-          {templateRoles && (
-            <RoleAssigneeCell
-              roleIds={templateRoles.rolesByTask.get(task.id) ?? []}
-              onChange={(roleIds) => templateRoles.setTaskRoles({ taskId: task.id, roleIds })}
+
+        {/* Priority Column */}
+        {showPriority && (
+          isCategoryHeader ? (
+            <div />
+          ) : (
+            <PriorityCell
+              priority={task.priority}
+              onChange={(priority) => onChangePriority(task.id, priority)}
               readOnly={!rowCaps.edit}
             />
-          )}
-          <AssigneeCell
-            assigneeIds={assigneesByTask.get(task.id) ?? []}
-            employeesById={employeesById}
-            allEmployees={allEmployees}
-            projectId={task.project_id}
-            onChange={(userIds) => onChangeAssignees(task.id, userIds)}
+          )
+        )}
+
+        {/* Assignee / Team Column */}
+        {isCategoryHeader ? (
+          <div />
+        ) : (
+          <div className="flex items-center gap-1">
+            {templateRoles && (
+              <RoleAssigneeCell
+                roleIds={templateRoles.rolesByTask.get(task.id) ?? []}
+                onChange={(roleIds) => templateRoles.setTaskRoles({ taskId: task.id, roleIds })}
+                readOnly={!rowCaps.edit}
+              />
+            )}
+            <AssigneeCell
+              assigneeIds={assigneesByTask.get(task.id) ?? []}
+              employeesById={employeesById}
+              allEmployees={allEmployees}
+              projectId={task.project_id}
+              onChange={(userIds) => onChangeAssignees(task.id, userIds)}
+              readOnly={!rowCaps.edit}
+            />
+          </div>
+        )}
+
+        {/* Start Date Column */}
+        {isCategoryHeader ? (
+          <div />
+        ) : (
+          <StartDateCell
+            startDate={task.start_date}
+            onChange={(date) => onChangeStartDate(task.id, date)}
             readOnly={!rowCaps.edit}
+            earliestStart={task.earliest_start}
+            lagDays={task.start_lag_days}
+            isSummary={task.is_summary}
+            onClearLag={() => onChangeLag(task.id, 0)}
           />
+        )}
+
+        {/* Duration Column: shows sum of child tasks for category header! */}
+        {isCategoryHeader ? (
+          childrenTotalDuration > 0 ? (
+            <Tooltip label={`إجمالي أيام العمل لجميع مهام «${task.title}»: ${childrenTotalDuration} يوم`}>
+              <span className="inline-flex items-center justify-center rounded-md bg-blue-50 border border-blue-200 px-2 py-0.5 text-xs font-black text-blue-800 shadow-2xs cursor-default">
+                {childrenTotalDuration} يوم
+              </span>
+            </Tooltip>
+          ) : (
+            <div />
+          )
+        ) : (
+          <DurationCell
+            days={task.duration_days}
+            onChange={(days) => onChangeDuration(task.id, days)}
+            readOnly={!rowCaps.edit}
+            isSummary={task.is_summary}
+          />
+        )}
+
+        {/* Due Date Column: completely blank for category header! */}
+        {isCategoryHeader ? (
+          <div />
+        ) : (
+          <DateCell
+            dueDate={task.due_date}
+            isOverdue={task.is_overdue}
+            statusCategory={statusCategory}
+            completedAt={task.completed_at}
+            onChange={(date) => onChangeDueDate(task.id, date)}
+            readOnly={!rowCaps.edit}
+            minDate={task.start_date}
+            isSummary={task.is_summary}
+          />
+        )}
+
+        {/* Department Column */}
+        <div className="truncate text-xs font-bold text-slate-500">
+          {isCategoryHeader ? "" : (department ?? "")}
         </div>
-        <StartDateCell
-          startDate={task.start_date}
-          onChange={(date) => onChangeStartDate(task.id, date)}
-          readOnly={!rowCaps.edit}
-          earliestStart={task.earliest_start}
-          lagDays={task.start_lag_days}
-          isSummary={task.is_summary}
-          onClearLag={() => onChangeLag(task.id, 0)}
-        />
-        <DurationCell
-          days={task.duration_days}
-          onChange={(days) => onChangeDuration(task.id, days)}
-          readOnly={!rowCaps.edit}
-          isSummary={task.is_summary}
-        />
-        <DateCell
-          dueDate={task.due_date}
-          isOverdue={task.is_overdue}
-          statusCategory={statusCategory}
-          completedAt={task.completed_at}
-          onChange={(date) => onChangeDueDate(task.id, date)}
-          readOnly={!rowCaps.edit}
-          minDate={task.start_date}
-          isSummary={task.is_summary}
-        />
-        <div className="truncate text-xs text-gray-400">{department ?? ""}</div>
         {customColumns.map((col) => (
           <EditGuard key={col.boardColumnId} disabled={!rowCaps.edit}>
             <CustomFieldCell

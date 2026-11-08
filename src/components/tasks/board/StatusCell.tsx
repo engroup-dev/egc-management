@@ -45,7 +45,7 @@ export default function StatusCell({
       <button
         onClick={() => !readOnly && setOpen((v) => !v)}
         style={pillStyle(current?.color ?? null)}
-        className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap"
+        className="inline-flex items-center rounded-lg px-3.5 py-1.5 text-[13px] font-bold whitespace-nowrap shadow-2xs transition-transform active:scale-95"
       >
         {current?.label_ar ?? "—"}
       </button>

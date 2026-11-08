@@ -31,7 +31,7 @@ export function matchSpaceNode(node: SpaceNode, rawTerm: string): SpaceMatch | n
   const term = normalizeSearchTerm(rawTerm);
   if (!term) return null;
 
-  const spaceMatches = includesTerm(term, node.space.name, node.projectName);
+  const spaceMatches = includesTerm(term, node.space.name, node.projectName, node.projectCode);
   const boards = allBoardsOf(node).filter((b) => includesTerm(term, b.board.name, b.zoneName));
   return spaceMatches || boards.length > 0 ? { spaceMatches, boards } : null;
 }

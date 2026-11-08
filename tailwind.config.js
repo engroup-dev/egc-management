@@ -8,6 +8,10 @@ module.exports = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["Cairo", "sans-serif"],
+        cairo: ["Cairo", "sans-serif"],
+      },
       colors: {
         /* 🎨 Core Semantic Colors */
         primary: {

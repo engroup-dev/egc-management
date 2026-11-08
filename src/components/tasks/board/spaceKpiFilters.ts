@@ -11,10 +11,10 @@ import { ASSIGNEE_NONE_KEY, createDefaultFilters, type DirectoryFilterState } fr
 // derived from the filters rather than stored, so it stays right when the
 // filter dialog changes them.
 
-export type KpiKey = "total" | "open" | "not_started" | "in_progress" | "overdue" | "done" | "unassigned" | "blocked";
+export type KpiKey = "total" | "open" | "not_started" | "in_progress" | "overdue" | "delayed_start" | "done" | "unassigned" | "blocked";
 
 /** Display order of the cards. */
-export const KPI_KEYS: KpiKey[] = ["total", "open", "not_started", "in_progress", "overdue", "done", "unassigned", "blocked"];
+export const KPI_KEYS: KpiKey[] = ["total", "open", "in_progress", "delayed_start", "overdue", "done", "not_started", "unassigned", "blocked"];
 
 export function notStartedStatusIds(data: TaskDirectoryData): string[] {
   return data.statuses.filter((s) => s.category === "not_started").map((s) => s.id);
@@ -44,6 +44,9 @@ export function kpiFilters(key: KpiKey, data: TaskDirectoryData): DirectoryFilte
     case "overdue":
       f.overdueOnly = true;
       break;
+    case "delayed_start":
+      f.delayedStartOnly = true;
+      break;
     case "done":
       f.statusMode = "done";
       break;
@@ -68,6 +71,7 @@ function sameFilters(a: DirectoryFilterState, b: DirectoryFilterState): boolean 
   return (
     a.statusMode === b.statusMode &&
     a.overdueOnly === b.overdueOnly &&
+    a.delayedStartOnly === b.delayedStartOnly &&
     a.isBlocked === b.isBlocked &&
     a.hasAttachments === b.hasAttachments &&
     a.hasComments === b.hasComments &&

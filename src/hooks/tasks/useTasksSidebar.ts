@@ -36,13 +36,25 @@ export interface FolderNode {
   boards: BoardWithCount[];
 }
 
+export interface SpaceStats {
+  totalTasks: number;
+  openTasks: number;
+  completedTasks: number;
+  overdueTasks: number;
+  delayedStartTasks: number;
+  progress: number;
+}
+
 export interface SpaceNode {
   space: SpaceRow;
   /** Name of the linked project (project-type spaces), so search can match
    * by project even when the space was named something else. */
   projectName: string | null;
+  /** Code of the linked project (e.g. 2UB3J1) */
+  projectCode: string | null;
   folders: FolderNode[];
   boards: BoardWithCount[]; // directly under the space (folder_id null)
+  stats: SpaceStats;
 }
 
 export interface DepartmentShortcut {
@@ -134,8 +146,8 @@ export function useTasksSidebar() {
               .eq("is_archived", false)
               .eq("is_template", false),
         projectIds.length === 0
-          ? Promise.resolve({ data: [] as { id: string; name: string }[], error: null })
-          : supabase.from("projects").select("id, name").in("id", projectIds),
+          ? Promise.resolve({ data: [] as { id: string; name: string; code?: string | null }[], error: null })
+          : supabase.from("projects").select("id, name, code").in("id", projectIds),
         myTaskIds.length === 0
           ? Promise.resolve({ data: [] as { status_id: string }[], error: null })
           : tasksDb
@@ -161,14 +173,22 @@ export function useTasksSidebar() {
       ] = await Promise.all([
         boardIds.length === 0
           ? Promise.resolve({
-              data: [] as { board_id: string; status_id: string; department_id: string | null }[],
+              data: [] as {
+                board_id: string;
+                status_id: string;
+                department_id: string | null;
+                is_overdue: boolean;
+                start_date: string | null;
+                due_date: string | null;
+              }[],
               error: null,
             })
           : tasksDb
               .from("tasks")
-              .select("board_id, status_id, department_id")
+              .select("board_id, status_id, department_id, is_overdue, start_date, due_date")
               .in("board_id", boardIds)
-              .eq("is_archived", false),
+              .eq("is_archived", false)
+              .eq("is_template", false),
         zoneIds.length === 0
           ? Promise.resolve({ data: [] as { id: string; name: string }[], error: null })
           : supabase.schema("boq").from("zones").select("id, name").in("id", zoneIds),
@@ -221,7 +241,35 @@ export function useTasksSidebar() {
 
       const myWorkCount = myOpenTaskStatusIds.filter(isOpen).length;
       const zoneNameById = new Map((zoneRows ?? []).map((z) => [z.id, z.name]));
-      const projectNameById = new Map((projectRows ?? []).map((p) => [p.id, p.name]));
+      const projectById = new Map(
+        (projectRows ?? []).map((p) => [p.id, { name: p.name, code: p.code ?? null }]),
+      );
+
+      // Map boards to their space_id for aggregating space-level stats
+      const boardToSpaceId = new Map((boards ?? []).map((b) => [b.id, b.space_id]));
+      const today = new Date().toISOString().split("T")[0];
+
+      // Group tasks by space_id
+      const tasksBySpaceId = new Map<
+        string,
+        {
+          status_id: string;
+          is_overdue: boolean;
+          start_date: string | null;
+          due_date: string | null;
+        }[]
+      >();
+      for (const task of boardTasksData ?? []) {
+        const spaceId = boardToSpaceId.get(task.board_id);
+        if (spaceId) {
+          let list = tasksBySpaceId.get(spaceId);
+          if (!list) {
+            list = [];
+            tasksBySpaceId.set(spaceId, list);
+          }
+          list.push(task);
+        }
+      }
 
       const boardsWithCount: BoardWithCount[] = (boards ?? []).map((b) => ({
         board: b,
@@ -237,16 +285,50 @@ export function useTasksSidebar() {
           (f) => f.space_id === space.id,
         );
 
+        const spaceTasks = tasksBySpaceId.get(space.id) ?? [];
+        const totalTasks = spaceTasks.length;
+        let openTasks = 0;
+        let completedTasks = 0;
+        let overdueTasks = 0;
+        let delayedStartTasks = 0;
+
+        for (const t of spaceTasks) {
+          const cat = categoryByStatusId.get(t.status_id);
+          const isDone = cat === "done" || cat === "closed";
+          const isOpenTask = cat === "not_started" || cat === "active";
+          if (isOpenTask) openTasks++;
+          if (isDone) completedTasks++;
+
+          const isOverdue = !isDone && (t.is_overdue || (!!t.due_date && t.due_date < today));
+          if (isOverdue) overdueTasks++;
+
+          const isDelayedStart =
+            !isDone && cat === "not_started" && !!t.start_date && t.start_date <= today;
+          if (isDelayedStart) delayedStartTasks++;
+        }
+
+        const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+        const proj = space.project_id ? projectById.get(space.project_id) : null;
+
         return {
           space,
-          projectName: space.project_id ? (projectNameById.get(space.project_id) ?? null) : null,
-          boards: spaceBoards.filter((b) => !b.board.folder_id),
+          projectName: proj?.name ?? null,
+          projectCode: proj?.code ?? null,
           folders: spaceFolders.map((folder) => ({
             folder,
             boards: spaceBoards.filter(
               (b) => b.board.folder_id === folder.id,
             ),
           })),
+          boards: spaceBoards.filter((b) => !b.board.folder_id),
+          stats: {
+            totalTasks,
+            openTasks,
+            completedTasks,
+            overdueTasks,
+            delayedStartTasks,
+            progress,
+          },
         };
       });
 

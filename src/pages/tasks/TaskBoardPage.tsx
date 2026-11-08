@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
-import { FileStack, ChevronRight, List, ChartGantt, Workflow, SquareKanban } from "lucide-react";
+import { FileStack, ChevronRight, List, ChartGantt, Workflow, SquareKanban, Download, Link2, ArrowLeftRight } from "lucide-react";
 import { useTaskBoard } from "../../hooks/tasks/useTaskBoard";
 import TaskTable from "../../components/tasks/board/TaskTable";
 import BoardSwitcher from "../../components/tasks/board/BoardSwitcher";
@@ -10,6 +10,8 @@ import TaskTypeBoard from "../../components/tasks/kanban/TaskTypeBoard";
 import TemplatePickerModal from "../../components/tasks/templates/TemplatePickerModal";
 import ZoneBar from "../../components/tasks/zones/ZoneBar";
 import ImportTasksDialog from "../../components/tasks/zones/ImportTasksDialog";
+import ChainZonesDialog from "../../components/tasks/zones/ChainZonesDialog";
+import { useSpaceZones } from "../../hooks/tasks/useZones";
 import CopyToZonesDialog from "../../components/tasks/zones/CopyToZonesDialog";
 import { TemplateModeProvider } from "../../components/tasks/TemplateModeContext";
 import { TemplateRolesProvider } from "../../components/tasks/TemplateRolesContext";
@@ -82,6 +84,7 @@ export default function TaskBoardPage({ view }: { view: BoardView }) {
   const { link, unlink, reverse, setLinkType } = useDependencyEdit(boardId);
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showChainZones, setShowChainZones] = useState(false);
   // "نسخ إلى مناطق أخرى": the tasks the dialog copies.
   const [copyTaskIds, setCopyTaskIds] = useState<string[] | null>(null);
   // The free diagram's shared layout + the tasks' highlight colours (every view shows them).
@@ -102,6 +105,7 @@ export default function TaskBoardPage({ view }: { view: BoardView }) {
   // until it answers, so nothing editable flashes up for a moment.
   const { access, userId } = useMyTaskAccess();
   const spaceCaps = useSpaceCaps(data?.board.space_id);
+  const { zones } = useSpaceZones(data?.board.space_id);
   const boardAccess = useMemo(
     () => ({ spaceCaps, assigneeCaps: access?.assignee_caps ?? NO_CAPS, myUserId: userId }),
     [spaceCaps, access, userId],
@@ -178,45 +182,68 @@ export default function TaskBoardPage({ view }: { view: BoardView }) {
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex overflow-hidden rounded-md border border-gray-200 text-sm">
-            {VIEW_TABS.map(({ view: tab, path, label, Icon }, i) => (
-              <Link
-                key={tab}
-                to={`/tasks/board/${data.board.id}${path}`}
-                className={`flex items-center gap-1.5 px-3 py-1.5 ${i > 0 ? "border-r border-gray-200" : ""} ${
-                  view === tab ? "bg-primary-superLight font-medium text-primary" : "text-gray-600 hover:bg-gray-50"
-                }`}
+        <div className="flex flex-col items-end gap-2">
+          {/* Row 1: View Tabs & Use Template */}
+          <div className="flex items-center gap-2">
+            <div className="flex overflow-hidden rounded-md border border-gray-200 text-sm">
+              {VIEW_TABS.map(({ view: tab, path, label, Icon }, i) => (
+                <Link
+                  key={tab}
+                  to={`/tasks/board/${data.board.id}${path}`}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 ${i > 0 ? "border-r border-gray-200" : ""} ${
+                    view === tab ? "bg-primary-superLight font-medium text-primary" : "text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {label}
+                </Link>
+              ))}
+            </div>
+
+            {spaceCaps.create && (
+              <button
+                onClick={() => setShowTemplatePicker(true)}
+                className="flex items-center gap-1.5 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50"
               >
-                <Icon className="h-3.5 w-3.5" />
-                {label}
-              </Link>
-            ))}
+                <FileStack className="h-3.5 w-3.5" />
+                استخدام قالب
+              </button>
+            )}
           </div>
-          {spaceCaps.create && (
-          <button
-            onClick={() => setShowTemplatePicker(true)}
-            className="flex items-center gap-1.5 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50"
-          >
-            <FileStack className="h-3.5 w-3.5" />
-            استخدام قالب
-          </button>
+
+          {/* Row 2 (تحتهن): Zone Tools */}
+          {!isTemplate && (
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setShowChainZones(true)}
+                className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all cursor-pointer shadow-2xs"
+                title="ربط مناطق المشروع تسلسلياً"
+              >
+                <Link2 className="h-3.5 w-3.5 text-gray-500" />
+                <span>ربط المناطق</span>
+              </button>
+
+              <button
+                onClick={() => setShowImport(true)}
+                className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all cursor-pointer shadow-2xs"
+                title="استيراد مهام من منطقة أخرى أو من قالب"
+              >
+                <Download className="h-3.5 w-3.5 text-gray-500" />
+                <span>استيراد مهام</span>
+              </button>
+
+              <Link
+                to={`/tasks/space/${data.board.space_id}/zones`}
+                className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all cursor-pointer shadow-2xs"
+                title="عرض المخطط الزمني الشامل للمناطق"
+              >
+                <ArrowLeftRight className="h-3.5 w-3.5 text-gray-500" />
+                <span>الخط الزمني للمناطق</span>
+              </Link>
+            </div>
           )}
         </div>
       </div>
-
-      {!isTemplate && (
-        <ZoneBar
-          spaceId={data.board.space_id}
-          projectId={data.projectId}
-          currentBoardId={data.board.id}
-          view={view}
-          canCreate={spaceCaps.create}
-          canEdit={spaceCaps.edit}
-          currentRootTaskIds={data.tasks.filter((t) => !t.parent_task_id).map((t) => t.id)}
-          onImport={() => setShowImport(true)}
-        />
-      )}
 
       {(pendingTaskIds.length > 0 || changedCount > 0 || removedCount > 0) && (
         <TemplateSyncBanner
@@ -406,6 +433,15 @@ export default function TaskBoardPage({ view }: { view: BoardView }) {
           targetZoneName={data.zoneName ?? data.board.name}
           targetTasks={data.tasks}
           onClose={() => setShowImport(false)}
+        />
+      )}
+
+      {showChainZones && (
+        <ChainZonesDialog
+          spaceId={data.board.space_id}
+          zones={zones}
+          onClose={() => setShowChainZones(false)}
+          onApplied={() => setShowChainZones(false)}
         />
       )}
 

@@ -52,7 +52,7 @@ export default function DurationCell({ days, onChange, readOnly = false, isSumma
           if (e.key === "Enter") commit();
           if (e.key === "Escape") setEditing(false);
         }}
-        className={`${size === "md" ? "w-20" : "w-14"} rounded border border-primary px-1.5 py-0.5 text-center text-xs outline-none`}
+        className={`${size === "md" ? "w-20" : "w-16"} rounded-lg border-2 border-primary px-2 py-1 text-center text-sm font-bold text-slate-900 outline-none shadow-xs`}
         dir="ltr"
       />
     );
@@ -60,12 +60,12 @@ export default function DurationCell({ days, onChange, readOnly = false, isSumma
 
   const label = days ? `${days} يوم` : "—";
   const tooltip = !days
-    ? locked ? "" : "عدد أيام العمل"
+    ? locked ? "" : "عدد أيام العمل (انقر للتعديل)"
     : isSummary
       ? `${workingDaysLabel(days)} · من أول مهمة فرعية إلى آخرها`
       : isTemplate
         ? `${workingDaysLabel(days)} — الجمعة تُستثنى عند تطبيق القالب`
-        : `${workingDaysLabel(days)} (بدون الجمعة)`;
+        : `${workingDaysLabel(days)} (بدون الجمعة) — انقر للتعديل`;
 
   const button = (
     <button
@@ -74,9 +74,11 @@ export default function DurationCell({ days, onChange, readOnly = false, isSumma
         setDraft(days ? String(days) : "1");
         setEditing(true);
       }}
-      className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${
-        days ? "bg-gray-50 text-gray-600" : "text-gray-300"
-      } ${locked ? "cursor-default" : "hover:bg-gray-100"} ${isSummary ? "italic" : ""}`}
+      className={`inline-flex items-center justify-center whitespace-nowrap rounded-lg px-2.5 py-1 text-[13px] font-bold transition-all shadow-2xs ${
+        days
+          ? "border border-slate-200 bg-slate-50 text-slate-700 hover:border-primary/40 hover:bg-primary-superLight/20 hover:text-primary"
+          : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+      } ${locked ? "cursor-default" : "cursor-pointer"} ${isSummary ? "italic font-semibold" : ""}`}
     >
       {label}
     </button>

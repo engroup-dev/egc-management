@@ -32,10 +32,10 @@ export default function TaskTypeCell({ taskTypes, currentTaskTypeId, onChange, a
     <div ref={ref} className="relative shrink-0">
       <button
         onClick={() => !readOnly && setOpen((v) => !v)}
-        className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full hover:bg-gray-100"
+        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full hover:bg-gray-100"
         title={current?.name_ar ?? "نوع المهمة"}
       >
-        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: current?.color ?? "#9CA3AF" }} />
+        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: current?.color ?? "#9CA3AF" }} />
       </button>
 
       <AnchoredMenu open={open} onClose={() => setOpen(false)} anchorRef={ref} width={160} align={align} className="py-1">

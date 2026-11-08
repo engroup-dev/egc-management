@@ -76,23 +76,103 @@ export function useSpaceZones(spaceId: string | undefined) {
     queryKey: ["space-zones", spaceId],
     enabled: !!spaceId,
     queryFn: async (): Promise<ZoneSpan[]> => {
-      const { data, error } = await supabase.schema("tasks").rpc("space_zone_spans", { p_space_id: spaceId as string });
-      if (error) throw error;
-      return (data ?? []).map((r) => ({
-        boardId: r.board_id,
-        boardName: r.board_name,
-        zoneId: r.zone_id,
-        zoneName: r.zone_name,
-        sortOrder: r.sort_order,
-        firstStart: r.first_start,
-        lastDue: r.last_due,
-        taskCount: r.task_count,
-        openCount: r.open_count,
-      }));
+      try {
+        const { data, error } = await supabase.schema("tasks").rpc("space_zone_spans", { p_space_id: spaceId as string });
+        if (!error && data && Array.isArray(data) && data.length > 0) {
+          return data.map((r: any) => ({
+            boardId: r.board_id,
+            boardName: r.board_name,
+            zoneId: r.zone_id,
+            zoneName: r.zone_name,
+            sortOrder: r.sort_order,
+            firstStart: r.first_start,
+            lastDue: r.last_due,
+            taskCount: r.task_count,
+            openCount: r.open_count,
+          }));
+        }
+      } catch {
+        // Fall back to direct table queries
+      }
+
+      // Robust fallback querying directly from tables if RPC is missing
+      const tasksDb = supabase.schema("tasks");
+      const { data: boardsData, error: boardsErr } = await tasksDb
+        .from("boards")
+        .select("id, name, zone_id, sort_order")
+        .eq("space_id", spaceId as string)
+        .eq("is_archived", false)
+        .eq("is_template", false)
+        .order("sort_order", { ascending: true });
+
+      if (boardsErr || !boardsData) return [];
+
+      const boardIds = boardsData.map((b) => b.id);
+      const zoneIds = Array.from(new Set(boardsData.map((b) => b.zone_id).filter(Boolean))) as string[];
+
+      const zoneMap = new Map<string, string>();
+      if (zoneIds.length > 0) {
+        try {
+          const { data: zData } = await supabase
+            .schema("boq")
+            .from("zones")
+            .select("id, name")
+            .in("id", zoneIds);
+          (zData ?? []).forEach((z: any) => zoneMap.set(z.id, z.name));
+        } catch {
+          // ignore
+        }
+      }
+
+      let tasksData: any[] = [];
+      if (boardIds.length > 0) {
+        try {
+          const { data: tData } = await tasksDb
+            .from("tasks")
+            .select("board_id, start_date, due_date, status_id")
+            .in("board_id", boardIds)
+            .eq("is_archived", false);
+          tasksData = tData ?? [];
+        } catch {
+          // ignore
+        }
+      }
+
+      const tasksByBoard = new Map<string, any[]>();
+      tasksData.forEach((t) => {
+        const list = tasksByBoard.get(t.board_id) ?? [];
+        list.push(t);
+        tasksByBoard.set(t.board_id, list);
+      });
+
+      return boardsData.map((b) => {
+        const bTasks = tasksByBoard.get(b.id) ?? [];
+        let firstStart: string | null = null;
+        let lastDue: string | null = null;
+        for (const t of bTasks) {
+          if (t.start_date && (!firstStart || t.start_date < firstStart)) firstStart = t.start_date;
+          if (t.due_date && (!lastDue || t.due_date > lastDue)) lastDue = t.due_date;
+        }
+        return {
+          boardId: b.id,
+          boardName: b.name,
+          zoneId: b.zone_id,
+          zoneName: (b.zone_id ? zoneMap.get(b.zone_id) : null) ?? b.name,
+          sortOrder: b.sort_order ?? 0,
+          firstStart,
+          lastDue,
+          taskCount: bTasks.length,
+          openCount: bTasks.length,
+        };
+      });
     },
   });
   const boards = query.data ?? [];
-  const zones = boards.filter((b) => b.zoneId);
+  // Every board in the space functions as a zone in Construction Flow:
+  const zones = boards.map((b) => ({
+    ...b,
+    zoneName: b.zoneName || b.boardName,
+  }));
   const projectEnd = zones.reduce<string | null>(
     (end, z) => (z.lastDue && (!end || z.lastDue > end) ? z.lastDue : end),
     null,

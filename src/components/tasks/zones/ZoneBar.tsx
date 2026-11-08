@@ -48,117 +48,137 @@ export default function ZoneBar({
   const [managing, setManaging] = useState(false);
   const [orderChanged, setOrderChanged] = useState(false);
 
-  const current = zones.find((z) => z.boardId === currentBoardId) ?? null;
-  if (loading || (!projectId && zones.length === 0)) return null;
+  const current = zones.find((z) => z.boardId === currentBoardId) ?? (zones.length > 0 ? zones[0] : null);
+  if (loading || zones.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 bg-gray-50/60 px-6 py-2 text-sm">
-      <span className="flex items-center gap-1 text-xs font-medium text-gray-500">
-        <Layers className="h-3.5 w-3.5" />
-        المناطق
-      </span>
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-6 py-2.5 text-sm shadow-2xs">
+      {/* Right side: Zones pills & Add Zone */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="flex items-center gap-1.5 text-xs font-black text-slate-500 pl-1">
+          <Layers className="h-4 w-4 text-slate-400" />
+          المناطق:
+        </span>
 
-      <div className="flex flex-wrap items-center gap-1.5">
-        {zones.map((z, i) => {
-          const active = z.boardId === currentBoardId;
-          const span = shortSpan(z.firstStart, z.lastDue);
-          return (
-            <Tooltip
-              key={z.boardId}
-              label={`${z.zoneName ?? z.boardName} · ${z.taskCount} مهمة، ${z.openCount} مفتوحة${span ? ` · ${span}` : ""}`}
-            >
-              <Link
-                to={`/tasks/board/${z.boardId}${VIEW_SUFFIX[view]}`}
-                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors ${
-                  active
-                    ? "border-primary bg-primary text-white"
-                    : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
-                }`}
+        <div className="flex flex-wrap items-center gap-2">
+          {zones.map((z, i) => {
+            const active = z.boardId === currentBoardId;
+            const span = shortSpan(z.firstStart, z.lastDue);
+            return (
+              <Tooltip
+                key={z.boardId}
+                label={`${z.zoneName ?? z.boardName} · ${z.taskCount} مهمة، ${z.openCount} مفتوحة${span ? ` · ${span}` : ""}`}
               >
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: zoneColor(i) }} />
-                {z.zoneName ?? z.boardName}
-                {span && <span className={active ? "text-white/75" : "text-gray-400"}>· {span}</span>}
-              </Link>
-            </Tooltip>
-          );
-        })}
-        {zones.length === 0 && <span className="text-xs text-gray-400">لا توجد مناطق بعد</span>}
+                <Link
+                  to={`/tasks/board/${z.boardId}${VIEW_SUFFIX[view]}`}
+                  className={`flex items-center gap-2 rounded-xl border px-3.5 py-1.5 text-xs font-bold transition-all shadow-2xs ${
+                    active
+                      ? "border-primary bg-primary text-white shadow-xs"
+                      : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white hover:border-slate-300"
+                  }`}
+                >
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ background: active ? "#ffffff" : zoneColor(i) }}
+                  />
+                  <span>{z.zoneName ?? z.boardName}</span>
+                  {span && (
+                    <span className={active ? "text-white/80 font-normal" : "text-slate-400 font-normal"}>
+                      · {span}
+                    </span>
+                  )}
+                </Link>
+              </Tooltip>
+            );
+          })}
+          {zones.length === 0 && <span className="text-xs text-slate-400">لا توجد مناطق بعد</span>}
+        </div>
+
+        {projectId && (
+          <button
+            onClick={() => setAdding(true)}
+            className="flex items-center gap-1.5 rounded-xl border border-dashed border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 hover:border-primary hover:text-primary transition-all shadow-2xs cursor-pointer"
+          >
+            <Plus className="h-4 w-4" />
+            <span>منطقة</span>
+          </button>
+        )}
       </div>
 
-      {canCreate && projectId && (
-        <button
-          onClick={() => setAdding(true)}
-          className="flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-white"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          منطقة
-        </button>
-      )}
-
-      {current && canEdit && (
-        <ManageZone
-          zone={current}
-          zones={zones}
-          open={managing}
-          setOpen={setManaging}
-          busy={actions.busy}
-          onRename={(name) => actions.renameZone({ zone: current, name })}
-          onMove={async (dir) => {
-            await actions.moveZone({ zones, boardId: current.boardId, dir });
-            setOrderChanged(true);
-          }}
-          onArchive={async () => {
-            await actions.archiveZoneBoard({ boardId: current.boardId });
-            const next = zones.find((z) => z.boardId !== current.boardId);
-            navigate(next ? `/tasks/board/${next.boardId}${VIEW_SUFFIX[view]}` : `/tasks/space/${spaceId}`);
-          }}
-        />
-      )}
-
-      <div className="mr-auto flex items-center gap-1.5">
-        {orderChanged && canEdit && (
-          <button
-            onClick={() => setChaining(true)}
-            className="rounded-full bg-amber-50 px-2.5 py-1 text-xs text-amber-700 hover:bg-amber-100"
-          >
-            تغيّر ترتيب المناطق — حدّث الربط
-          </button>
-        )}
+      {/* Left side: Zone Smart Actions (Manage, Import, Chain, Timeline, End Date) */}
+      <div className="flex flex-wrap items-center gap-2">
         {projectEnd && (
-          <span className="text-xs text-gray-500">
-            نهاية المشروع <span className="font-medium text-gray-700">{shortDate(projectEnd)}</span>
-          </span>
+          <div className="flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-1.5 text-xs font-bold text-amber-800 shadow-2xs">
+            <span>🏁 نهاية المشروع:</span>
+            <span className="font-black text-amber-900">{shortDate(projectEnd)}</span>
+          </div>
         )}
-        {canCreate && zones.length > 1 && current && (
+
+        {current && (
+          <ManageZone
+            zone={current}
+            zones={zones}
+            open={managing}
+            setOpen={setManaging}
+            busy={actions.busy}
+            onRename={(name) => actions.renameZone({ zone: current, name })}
+            onMove={async (dir) => {
+              await actions.moveZone({ zones, boardId: current.boardId, dir });
+              setOrderChanged(true);
+            }}
+            onArchive={async () => {
+              await actions.archiveZoneBoard({ boardId: current.boardId });
+              const next = zones.find((z) => z.boardId !== current.boardId);
+              navigate(next ? `/tasks/board/${next.boardId}${VIEW_SUFFIX[view]}` : `/tasks/space/${spaceId}`);
+            }}
+          />
+        )}
+
+        {current && (
           <button
             onClick={onImport}
-            className="flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50"
+            className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-primary hover:text-primary hover:bg-primary-superLight/20 transition-all shadow-2xs cursor-pointer"
+            title="استيراد مهام من منطقة أخرى أو من قالب"
           >
-            <Download className="h-3.5 w-3.5" />
-            استيراد مهام
+            <Download className="h-3.5 w-3.5 text-slate-500" />
+            <span>استيراد مهام</span>
           </button>
         )}
-        {canEdit && zones.length > 1 && (
+
+        {zones.length > 1 && (
           <Tooltip label="كل مهمة في منطقة تنتظر انتهاء نفس المهمة في المنطقة السابقة">
             <button
               onClick={() => setChaining(true)}
-              className="flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50"
+              className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-primary hover:text-primary hover:bg-primary-superLight/20 transition-all shadow-2xs cursor-pointer"
             >
-              <Link2 className="h-3.5 w-3.5" />
-              ربط المناطق
+              <Link2 className="h-3.5 w-3.5 text-slate-500" />
+              <span>ربط المناطق</span>
             </button>
           </Tooltip>
         )}
+
         {zones.length > 0 && (
           <Link
             to={`/tasks/space/${spaceId}/zones`}
-            className="flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50"
+            className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-primary hover:text-primary hover:bg-primary-superLight/20 transition-all shadow-2xs cursor-pointer"
+            title="عرض المخطط الزمني الشامل لكل المناطق معاً"
           >
-            <ArrowLeftRight className="h-3.5 w-3.5" />
-            الخط الزمني للمناطق
+            <ArrowLeftRight className="h-3.5 w-3.5 text-slate-500" />
+            <span>الخط الزمني للمناطق</span>
           </Link>
         )}
       </div>
+
+      {orderChanged && canEdit && (
+        <div className="w-full flex justify-end">
+          <button
+            onClick={() => setChaining(true)}
+            className="rounded-xl bg-amber-100 border border-amber-300 px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-200 transition-all shadow-xs"
+          >
+            تغيّر ترتيب المناطق — حدّث الربط الآن
+          </button>
+        </div>
+      )}
 
       {adding && projectId && (
         <AddZoneDialog
@@ -229,11 +249,11 @@ function ManageZone({
           setName(zone.zoneName ?? zone.boardName);
           setOpen(!open);
         }}
-        className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-gray-500 hover:bg-white"
-        title="إدارة هذه المنطقة"
+        className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-slate-300 hover:text-slate-900 transition-all shadow-2xs"
+        title="إدارة هذه المنطقة (تعديل الاسم، الترتيب، الأرشفة)"
       >
-        <Settings2 className="h-3.5 w-3.5" />
-        إدارة المنطقة
+        <Settings2 className="h-3.5 w-3.5 text-slate-500" />
+        <span>إدارة المنطقة</span>
       </button>
       {open && (
         <div className="absolute right-0 top-full z-30 mt-1 w-64 space-y-2 rounded-lg border border-gray-200 bg-white p-3 shadow-lg">

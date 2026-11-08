@@ -135,9 +135,9 @@ export default function DateCell({
         <Tooltip label={completed.tooltip}>
           <button
             onClick={() => !readOnly && setOpen((v) => !v)}
-            className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${completed.className}`}
+            className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-[13px] font-bold border border-emerald-200/80 ${completed.className}`}
           >
-            <CheckCircle2 className="h-3 w-3 shrink-0" />
+            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
             {completed.label}
           </button>
         </Tooltip>
@@ -145,7 +145,7 @@ export default function DateCell({
         <Tooltip label={formatSlashDate(dueDate)}>
           <button
             onClick={() => !readOnly && setOpen((v) => !v)}
-            className="whitespace-nowrap rounded-full bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-500"
+            className="whitespace-nowrap rounded-lg bg-slate-100 border border-slate-200/70 px-3 py-1.5 text-[13px] font-bold text-slate-600"
           >
             {formatSlashDate(dueDate)}
           </button>
@@ -154,12 +154,12 @@ export default function DateCell({
         <Tooltip label={formatSlashDate(dueDate)}>
           <button
             onClick={() => !readOnly && setOpen((v) => !v)}
-            className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${
+            className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-[13px] font-bold border ${
               isOverdue
-                ? "bg-red-50 text-red-600"
+                ? "bg-rose-50 text-rose-700 border-rose-300"
                 : dueSoon
-                  ? "bg-amber-50 text-amber-600"
-                  : "bg-gray-50 text-gray-500"
+                  ? "bg-amber-50 text-amber-700 border-amber-300"
+                  : "bg-slate-100 text-slate-700 border-slate-200"
             }`}
           >
             {relativeLabel(dueDate)}
