@@ -49,6 +49,8 @@ export const boqTypeWorksQueryOptions = (typeId: string) =>
     enabled: !!typeId,
   });
 
+const EMPTY_WORKS: WorkFull[] = [];
+
 export function useTypeWorks(typeId: string) {
   const queryClient = useQueryClient();
   const query = useQuery(boqTypeWorksQueryOptions(typeId));
@@ -66,7 +68,7 @@ export function useTypeWorks(typeId: string) {
   };
 
   return {
-    works: query.data ?? [],
+    works: query.data ?? EMPTY_WORKS,
     setWorks,
     // isLoading: a disabled query (no typeId) must not read as loading.
     loading: query.isLoading,

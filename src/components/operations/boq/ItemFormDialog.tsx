@@ -48,6 +48,8 @@ const ItemFormDialog: React.FC<ItemFormDialogProps> = ({
   loading = false,
   templateWorkId,
 }) => {
+  if (!isOpen) return null;
+
   const {
     register,
     handleSubmit,
@@ -75,6 +77,7 @@ const ItemFormDialog: React.FC<ItemFormDialogProps> = ({
   }, [isOpen, defaultValues, reset]);
 
   useEffect(() => {
+    if (!isOpen || source !== "template" || templateItems.length === 0) return;
     setTemplateRows(
       templateItems.map((item) => ({
         templateItemId: item.id,
@@ -85,7 +88,7 @@ const ItemFormDialog: React.FC<ItemFormDialogProps> = ({
         unit_price: item.default_unit_price,
       })),
     );
-  }, [templateItems]);
+  }, [isOpen, source, templateItems]);
 
   const toggleTemplateRow = (templateItemId: string) => {
     setTemplateRows((rows) =>

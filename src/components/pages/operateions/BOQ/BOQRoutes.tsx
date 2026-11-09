@@ -17,10 +17,11 @@ export default function BOQRoutes() {
         path="project/:projectId"
         element={<RequirePermission permission="view_operations_boq" />}
       >
-        <Route index element={<OperationsBOQProjectPage />} />
+        <Route index element={<BOQTypesPage />} />
         <Route path="zones" element={<BOQZonesPage />} />
         <Route path="types" element={<BOQTypesPage />} />
         <Route path="types/:typeId" element={<BOQTypeReviewPage />} />
+        <Route path=":typeId" element={<BOQTypeReviewPage />} />
       </Route>
     </Routes>
   );

@@ -54,6 +54,8 @@ export const boqTemplateTypeWorksQueryOptions = (templateTypeId: string) =>
     enabled: !!templateTypeId,
   });
 
+const EMPTY_WORKS: TemplateWorkFull[] = [];
+
 export function useTemplateTypeWorks(templateTypeId: string) {
   const queryClient = useQueryClient();
   const query = useQuery(boqTemplateTypeWorksQueryOptions(templateTypeId));
@@ -72,7 +74,7 @@ export function useTemplateTypeWorks(templateTypeId: string) {
   };
 
   return {
-    works: query.data ?? [],
+    works: query.data ?? EMPTY_WORKS,
     setWorks,
     // isLoading: a disabled query (no templateTypeId) must not read as loading.
     loading: query.isLoading,

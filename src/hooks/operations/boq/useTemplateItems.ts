@@ -44,6 +44,8 @@ export const boqTemplateWorkItemsQueryOptions = (templateWorkId: string) =>
     enabled: !!templateWorkId,
   });
 
+const EMPTY_ITEMS: TemplateItemRow[] = [];
+
 export function useTemplateWorkItems(templateWorkId: string) {
   const query = useQuery(boqTemplateWorkItemsQueryOptions(templateWorkId));
 
@@ -53,7 +55,7 @@ export function useTemplateWorkItems(templateWorkId: string) {
   };
 
   return {
-    items: query.data ?? [],
+    items: query.data ?? EMPTY_ITEMS,
     // isLoading: a disabled query (no templateWorkId) must not read as loading.
     loading: query.isLoading,
     error: query.error as PostgrestError | null,

@@ -103,14 +103,17 @@ const BOQTypesPage = () => {
         onReorder={handleReorder}
         emptyMessage="لا توجد أنواع بعد"
         renderItem={(type) => (
-          <div className="flex items-center justify-between gap-3 px-4 py-3 border rounded-lg bg-white hover:bg-gray-50 transition-colors">
-            <Link
-              to={`./${type.id}`}
-              className="font-bold hover:underline hover:text-blue-600 truncate"
-            >
+          <div
+            onClick={() => navigate(`/operations/boq/project/${projectId}/types/${type.id}`)}
+            className="flex items-center justify-between gap-3 px-4 py-3 border rounded-lg bg-white hover:bg-blue-50/40 hover:border-blue-200 transition-all cursor-pointer group"
+          >
+            <div className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors truncate">
               {type.name}
-            </Link>
-            <div className="flex items-center gap-3 shrink-0">
+            </div>
+            <div
+              className="flex items-center gap-3 shrink-0"
+              onClick={(e) => e.stopPropagation()}
+            >
               <span className="text-xs text-gray-400 whitespace-nowrap">
                 v{type.version}
               </span>
@@ -119,17 +122,23 @@ const BOQTypesPage = () => {
               </span>
               <button
                 type="button"
-                className="p-1.5 text-gray-400 hover:text-primary"
+                className="p-1.5 text-gray-400 hover:text-primary transition-colors"
                 aria-label="تعديل النوع"
-                onClick={() => setEditingType(type)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditingType(type);
+                }}
               >
                 <Pencil className="w-3.5 h-3.5" />
               </button>
               <button
                 type="button"
-                className="p-1.5 text-gray-400 hover:text-error"
+                className="p-1.5 text-gray-400 hover:text-error transition-colors"
                 aria-label="حذف النوع"
-                onClick={() => setTypeToDelete(type)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setTypeToDelete(type);
+                }}
               >
                 <Trash className="w-3.5 h-3.5" />
               </button>
@@ -138,13 +147,15 @@ const BOQTypesPage = () => {
         )}
       />
 
-      <CreateTypeFromTemplateDialog
-        isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
-        projectId={projectId}
-        existingTypes={types}
-        onCreated={handleCreated}
-      />
+      {isCreateOpen && (
+        <CreateTypeFromTemplateDialog
+          isOpen={isCreateOpen}
+          onClose={() => setIsCreateOpen(false)}
+          projectId={projectId}
+          existingTypes={types}
+          onCreated={handleCreated}
+        />
+      )}
 
       <TypeFormDialog
         isOpen={editingType !== null}

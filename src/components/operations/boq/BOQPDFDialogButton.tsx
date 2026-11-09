@@ -6,10 +6,8 @@ import { BOQReportRequest } from "../../../hooks/operations/boq/boqPdfPayload";
 import { WorkFull } from "../../../hooks/operations/boq/types";
 import { BOQType } from "../../../hooks/operations/boq/useTypes";
 import { Zone } from "../../../hooks/operations/boq/useZones";
-import { ProjectWithDetailsForBook } from "../../../types/projects.type";
-
 type BOQPDFDialogButtonProps = {
-  project: ProjectWithDetailsForBook;
+  project: { name: string };
   currentType: BOQType;
   allTypes: BOQType[];
   works: WorkFull[];

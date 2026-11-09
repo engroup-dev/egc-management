@@ -50,6 +50,7 @@ const CreateTypeFromTemplateDialog: React.FC<
     reset,
     control,
     setError,
+    setValue,
     formState: { errors },
   } = useForm<CreateTypeFromTemplateFormValues>({
     resolver: zodResolver(CreateTypeFromTemplateSchema),
@@ -57,6 +58,7 @@ const CreateTypeFromTemplateDialog: React.FC<
   });
 
   const [rpcError, setRpcError] = React.useState<string | null>(null);
+  const initializedTemplateRef = React.useRef<string>("");
 
   const useTemplate = watch("use_template");
   const templateTypeId = watch("template_type_id");
@@ -130,13 +132,22 @@ const CreateTypeFromTemplateDialog: React.FC<
     if (isOpen) {
       reset(DEFAULT_VALUES);
       setRpcError(null);
+      initializedTemplateRef.current = "";
     }
   }, [isOpen, reset]);
 
   useEffect(() => {
-    workIdsField.onChange(works.map((w) => w.id));
-    itemIdsField.onChange(works.flatMap((w) => w.items.map((i) => i.id)));
-  }, [works]);
+    if (!isOpen || !templateTypeId || works.length === 0) return;
+    if (initializedTemplateRef.current === templateTypeId) return;
+    initializedTemplateRef.current = templateTypeId;
+
+    const newWorkIds = works.map((w) => w.id);
+    const newItemIds = works.flatMap((w) => w.items.map((i) => i.id));
+    workIdsField.onChange(newWorkIds);
+    itemIdsField.onChange(newItemIds);
+  }, [isOpen, templateTypeId, works]);
+
+  if (!isOpen) return null;
 
   const onSubmit = async (values: CreateTypeFromTemplateFormValues) => {
     setRpcError(null);

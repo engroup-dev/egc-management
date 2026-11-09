@@ -62,6 +62,8 @@ export const boqTypesQueryOptions = (projectId: string) =>
     enabled: !!projectId,
   });
 
+const EMPTY_TYPES: BOQType[] = [];
+
 export function useTypes(projectId: string) {
   const queryClient = useQueryClient();
   const query = useQuery(boqTypesQueryOptions(projectId));
@@ -79,7 +81,7 @@ export function useTypes(projectId: string) {
   };
 
   return {
-    types: query.data ?? [],
+    types: query.data ?? EMPTY_TYPES,
     setTypes,
     // isLoading, not isPending: a disabled query (no projectId) is pending
     // forever, and the old hook reported false there.

@@ -34,6 +34,8 @@ export const boqTemplateTypesQueryOptions = () =>
     queryFn: fetchTemplateTypes,
   });
 
+const EMPTY_TEMPLATE_TYPES: TemplateType[] = [];
+
 export function useTemplateTypes() {
   const queryClient = useQueryClient();
   const query = useQuery(boqTemplateTypesQueryOptions());
@@ -48,7 +50,7 @@ export function useTemplateTypes() {
   };
 
   return {
-    templateTypes: query.data ?? [],
+    templateTypes: query.data ?? EMPTY_TEMPLATE_TYPES,
     setTemplateTypes,
     loading: query.isPending,
     error: query.error as PostgrestError | null,

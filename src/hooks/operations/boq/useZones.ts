@@ -37,6 +37,8 @@ export const boqZonesQueryOptions = (projectId: string) =>
     enabled: !!projectId,
   });
 
+const EMPTY_ZONES: Zone[] = [];
+
 export function useZones(projectId: string) {
   const queryClient = useQueryClient();
   const query = useQuery(boqZonesQueryOptions(projectId));
@@ -54,7 +56,7 @@ export function useZones(projectId: string) {
   };
 
   return {
-    zones: query.data ?? [],
+    zones: query.data ?? EMPTY_ZONES,
     setZones,
     // isLoading: a disabled query (no projectId) must not read as loading.
     loading: query.isLoading,

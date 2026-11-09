@@ -39,6 +39,8 @@ const WorkFormDialog: React.FC<WorkFormDialogProps> = ({
   zones,
   zone,
 }) => {
+  if (!isOpen) return null;
+
   const {
     register,
     handleSubmit,

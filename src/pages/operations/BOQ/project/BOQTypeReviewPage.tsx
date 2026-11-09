@@ -6,7 +6,7 @@ import ErrorPage from "../../../../components/ui/errorPage";
 import ConfirmDialog from "../../../../components/ui/ConfirmDialog";
 import Button from "../../../../components/ui/Button";
 import BOQPDFDialogButton from "../../../../components/operations/boq/BOQPDFDialogButton";
-import { useBookProject } from "../../../../hooks/projects/useBookProjects";
+import { useProject } from "../../../../hooks/useProjects";
 
 import {
   ItemRow,
@@ -68,7 +68,7 @@ const BOQTypeReviewPage = () => {
   );
   const { types } = useTypes(projectId ?? "");
   const { zones } = useZones(projectId ?? "");
-  const { project } = useBookProject(projectId ?? "");
+  const { project } = useProject(projectId ?? "");
 
   const { createWork, loading: savingWork } = useCreateWork();
   const { createWorkFromTemplate, loading: savingWorkFromTemplate } =
@@ -310,44 +310,48 @@ const BOQTypeReviewPage = () => {
         savingQuantities={savingQuantities}
       />
 
-      <WorkFormDialog
-        isOpen={workDialog !== null}
-        onClose={() => setWorkDialog(null)}
-        onSubmit={handleWorkSubmit}
-        onSubmitFromTemplate={handleWorkSubmitFromTemplate}
-        loading={savingWork || savingWorkFromTemplate}
-        templateTypeId={currentType?.template_type_id}
-        zones={zones}
-        zone={workDialog?.mode === "create" ? workDialog.zone : null}
-        defaultValues={
-          workDialog?.mode === "edit"
-            ? { name: workDialog.work.name }
-            : undefined
-        }
-      />
+      {workDialog !== null && (
+        <WorkFormDialog
+          isOpen={workDialog !== null}
+          onClose={() => setWorkDialog(null)}
+          onSubmit={handleWorkSubmit}
+          onSubmitFromTemplate={handleWorkSubmitFromTemplate}
+          loading={savingWork || savingWorkFromTemplate}
+          templateTypeId={currentType?.template_type_id}
+          zones={zones}
+          zone={workDialog?.mode === "create" ? workDialog.zone : null}
+          defaultValues={
+            workDialog?.mode === "edit"
+              ? { name: workDialog.work.name }
+              : undefined
+          }
+        />
+      )}
 
-      <ItemFormDialog
-        isOpen={itemDialog !== null}
-        onClose={() => setItemDialog(null)}
-        onSubmit={handleItemSubmit}
-        onSubmitFromTemplate={handleItemSubmitFromTemplate}
-        loading={savingItem || savingItemsFromTemplate}
-        templateWorkId={
-          itemDialog?.mode === "create"
-            ? itemDialog.work.template_work_id
-            : null
-        }
-        defaultValues={
-          itemDialog?.mode === "edit"
-            ? {
-                name: itemDialog.item.name,
-                unit: itemDialog.item.unit,
-                quantity: itemDialog.item.quantity,
-                unit_price: itemDialog.item.unit_price,
-              }
-            : undefined
-        }
-      />
+      {itemDialog !== null && (
+        <ItemFormDialog
+          isOpen={itemDialog !== null}
+          onClose={() => setItemDialog(null)}
+          onSubmit={handleItemSubmit}
+          onSubmitFromTemplate={handleItemSubmitFromTemplate}
+          loading={savingItem || savingItemsFromTemplate}
+          templateWorkId={
+            itemDialog?.mode === "create"
+              ? itemDialog.work.template_work_id
+              : null
+          }
+          defaultValues={
+            itemDialog?.mode === "edit"
+              ? {
+                  name: itemDialog.item.name,
+                  unit: itemDialog.item.unit,
+                  quantity: itemDialog.item.quantity,
+                  unit_price: itemDialog.item.unit_price,
+                }
+              : undefined
+          }
+        />
+      )}
 
       <ConfirmDialog
         open={deleteState !== null}

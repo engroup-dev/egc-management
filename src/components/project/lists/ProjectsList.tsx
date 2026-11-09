@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { useProjects } from "../../../hooks/useProjects";
 import { createProjectsColumns } from "../../tables/columns/ProjectsColumns";
 import GenericTable from "../../tables/table";
@@ -25,6 +26,7 @@ const ProjectsList = ({
   version = "default",
   counters = [],
 }: ProjectsListProps) => {
+  const navigate = useNavigate();
   const { projects } = useProjects();
   const counts = useProjectCounts(counters);
 
@@ -138,6 +140,7 @@ const ProjectsList = ({
         enableSorting
         enableFiltering
         showGlobalFilter
+        onRowClick={(row) => navigate(`${basePath}/${row.id}`)}
         initialSorting={[{ id: "serial_number", desc: true }]}
       />
     </div>
