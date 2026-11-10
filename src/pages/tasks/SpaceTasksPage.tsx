@@ -13,10 +13,12 @@ import {
   Search,
   ShoppingCart,
   SlidersHorizontal,
+  Sparkles,
   Layers,
   ChevronLeft,
   RotateCcw,
   ExternalLink,
+  Zap,
 } from "lucide-react";
 import {
   DirectoryColumnProvider,
@@ -29,10 +31,14 @@ import { useTasksSidebar } from "../../hooks/tasks/useTasksSidebar";
 import DirectoryTaskRow, {
   directoryRowGridStyle,
 } from "../../components/tasks/board/DirectoryTaskRow";
+import InlineCreateTaskRow from "../../components/tasks/board/InlineCreateTaskRow";
 import DirectoryFilterSortPopover from "../../components/tasks/board/DirectoryFilterSortPopover";
 import SpaceKpiStrip from "../../components/tasks/board/SpaceKpiStrip";
 import OverdueNotifyButton from "../../components/tasks/board/OverdueNotifyButton";
 import SpaceTourDialog from "../../components/tasks/tour/SpaceTourDialog";
+import MasterCleanDialog from "../../components/tasks/clean/MasterCleanDialog";
+import DailyStandupDialog from "../../components/tasks/daily/DailyStandupDialog";
+import { ClipboardCheck } from "lucide-react";
 import TaskGantt, {
   type GanttGroup,
 } from "../../components/tasks/gantt/TaskGantt";
@@ -146,6 +152,17 @@ function SpaceMasterTableHeader({ showSource }: { showSource: boolean }) {
 
 const boardOf = (task: TaskRow) => task.board_id;
 
+type CreationMode = "inline" | "modal";
+const CREATION_MODE_KEY = "egc_task_creation_mode";
+
+function getSavedCreationMode(): CreationMode {
+  try {
+    const saved = localStorage.getItem(CREATION_MODE_KEY);
+    if (saved === "inline" || saved === "modal") return saved;
+  } catch {}
+  return "inline";
+}
+
 export default function SpaceTasksPage({ view }: { view: "list" | "gantt" | "zones" }) {
   const { spaceId, taskId } = useParams<{ spaceId: string; taskId?: string }>();
   const navigate = useNavigate();
@@ -157,6 +174,21 @@ export default function SpaceTasksPage({ view }: { view: "list" | "gantt" | "zon
   const spaceCaps = useSpaceCaps(spaceId);
   const { zones } = useSpaceZones(spaceId);
   const { openCreateTask } = useCreateTaskDialog();
+  const [creationMode, setCreationModeState] = useState<CreationMode>(getSavedCreationMode);
+  const [isInlineAdding, setIsInlineAdding] = useState(false);
+
+  const setCreationMode = useCallback((mode: CreationMode) => {
+    setCreationModeState(mode);
+    try {
+      localStorage.setItem(CREATION_MODE_KEY, mode);
+    } catch {}
+    if (mode === "inline") {
+      setIsInlineAdding(true);
+    } else {
+      setIsInlineAdding(false);
+    }
+  }, []);
+
   const [search, setSearch] = useState("");
   const [selectedZoneKey, setSelectedZoneKey] = useState<string>("all");
   const [filters, setFilters] = useState<DirectoryFilterState>(createDefaultFilters());
@@ -166,6 +198,8 @@ export default function SpaceTasksPage({ view }: { view: "list" | "gantt" | "zon
   });
   const [showFilterDialog, setShowFilterDialog] = useState(false);
   const [showTour, setShowTour] = useState(false);
+  const [showMasterClean, setShowMasterClean] = useState(false);
+  const [showDailyStandup, setShowDailyStandup] = useState(false);
   const closeTour = useCallback(() => setShowTour(false), []);
   const searching = search.trim().length > 0;
 
@@ -388,11 +422,29 @@ export default function SpaceTasksPage({ view }: { view: "list" | "gantt" | "zon
 
             <button
               onClick={() => setShowTour(true)}
-              className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors"
+              className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors cursor-pointer"
               title="ملخص المساحة كشرائح"
             >
               <Presentation className="h-4 w-4 text-slate-500" />
               جولة في المساحة
+            </button>
+
+            <button
+              onClick={() => setShowMasterClean(true)}
+              className="flex items-center gap-1.5 rounded-xl border border-purple-200 bg-purple-50/70 px-3.5 py-2 text-sm font-bold text-purple-700 shadow-2xs hover:bg-purple-100 hover:border-purple-300 transition-colors cursor-pointer"
+              title="الجدول التنفيذي الصافي - ضبط المدد والتواريخ ومعالجة التأخيرات"
+            >
+              <Sparkles className="h-4 w-4 text-purple-600" />
+              Master Clean
+            </button>
+
+            <button
+              onClick={() => setShowDailyStandup(true)}
+              className="flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3.5 py-2 text-sm font-bold text-emerald-800 shadow-2xs hover:bg-emerald-100 hover:border-emerald-300 transition-colors cursor-pointer"
+              title="المتابعة الميدانية اليومية - تسجيل سير العمل وتحديث المهام النشطة والمتأخرة"
+            >
+              <ClipboardCheck className="h-4 w-4 text-emerald-600" />
+              يومية الموقع
             </button>
 
             <button
@@ -559,11 +611,36 @@ export default function SpaceTasksPage({ view }: { view: "list" | "gantt" | "zon
                 <ResetColumnsButton />
               </div>
 
-              {displayedTasks.length === 0 ? (
+              {displayedTasks.length === 0 && !isInlineAdding ? (
                 <div className="p-20 text-center text-base font-semibold text-slate-400">
-                  {searching || activeFilterCount > 0
-                    ? "لا توجد مهام تطابق البحث أو الفلتر المختار"
-                    : "لا توجد مهام مسجلة في هذه المنطقة بعد"}
+                  <p>
+                    {searching || activeFilterCount > 0
+                      ? "لا توجد مهام تطابق البحث أو الفلتر المختار"
+                      : "لا توجد مهام مسجلة في هذه المنطقة بعد"}
+                  </p>
+                  {spaceCaps.create && (
+                    <div className="mt-4 flex items-center justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsInlineAdding(true)}
+                        className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-primary-dark transition-all"
+                      >
+                        <Plus className="h-4 w-4" />
+                        <span>إضافة سطر مهمة جديدة</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openCreateTask({
+                            boardId: selectedZoneKey === "all" ? groups[0]?.key : selectedZoneKey,
+                          })
+                        }
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-all"
+                      >
+                        <span>نافذة تفصيلية</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="overflow-x-auto scrollbar-thin">
@@ -604,21 +681,49 @@ export default function SpaceTasksPage({ view }: { view: "list" | "gantt" | "zon
                         {...mutations}
                       />
                     ))}
+
+                    {/* Inline Quick Add Row */}
+                    {spaceCaps.create && isInlineAdding && (
+                      <InlineCreateTaskRow
+                        showSource={showSourceColumn}
+                        defaultBoardId={
+                          selectedZoneKey === "all" ? groups[0]?.key : selectedZoneKey
+                        }
+                        boards={groups.map((g) => ({ key: g.key, label: g.label }))}
+                        onCreate={(boardId, title) => mutations.onCreateTask(boardId, title)}
+                        onOpenModal={(boardId, title) => {
+                          openCreateTask({ boardId, title });
+                        }}
+                        onCancel={() => setIsInlineAdding(false)}
+                      />
+                    )}
                   </div>
 
                   {/* Bottom Add Task */}
                   {spaceCaps.create && (
-                    <button
-                      onClick={() =>
-                        openCreateTask({
-                          boardId: selectedZoneKey === "all" ? groups[0]?.key : selectedZoneKey,
-                        })
-                      }
-                      className="flex w-full items-center justify-center gap-2 border-t border-slate-200 bg-slate-50/60 py-4 text-sm font-bold text-primary hover:bg-primary-superLight/30 transition-colors"
-                    >
-                      <Plus className="h-4 w-4" />
-                      <span>إضافة مهمة جديدة</span>
-                    </button>
+                    <div>
+                      {isInlineAdding ? (
+                        <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50/80 px-4 py-2.5 text-xs text-slate-500 font-medium">
+                          <span>اكتب اسم المهمة واضغط Enter للإضافة والمتابعة التلقائية</span>
+                          <button
+                            type="button"
+                            onClick={() => setIsInlineAdding(false)}
+                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-600 hover:text-slate-900 shadow-2xs"
+                          >
+                            إنهاء الإضافة (Esc)
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setIsInlineAdding(true)}
+                          className="flex w-full items-center justify-center gap-2 border-t border-slate-200 bg-slate-50/60 py-3.5 text-sm font-bold text-primary hover:bg-primary-superLight/30 transition-colors"
+                        >
+                          <Plus className="h-4 w-4" />
+                          <span>إضافة سطر مهمة جديدة (Enter ↵)</span>
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
@@ -641,6 +746,30 @@ export default function SpaceTasksPage({ view }: { view: "list" | "gantt" | "zon
           onChangeStartDate={mutations.onChangeStartDate}
           onChangeDueDate={mutations.onChangeDueDate}
           onChangeAssignees={mutations.onChangeAssignees}
+        />
+      )}
+
+      {showMasterClean && (
+        <MasterCleanDialog
+          data={data}
+          spaceName={projectName}
+          spaceColor={spaceColor}
+          onClose={() => setShowMasterClean(false)}
+          onOpenTask={openTask}
+          onChangeTaskDates={onChangeTaskDates}
+          onChangeStatus={mutations.onChangeStatus}
+        />
+      )}
+
+      {showDailyStandup && (
+        <DailyStandupDialog
+          data={data}
+          spaceName={projectName}
+          spaceColor={spaceColor}
+          onClose={() => setShowDailyStandup(false)}
+          onOpenTask={openTask}
+          onChangeTaskDates={onChangeTaskDates}
+          onChangeStatus={mutations.onChangeStatus}
         />
       )}
 

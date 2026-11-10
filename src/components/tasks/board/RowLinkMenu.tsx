@@ -32,7 +32,7 @@ export function useRowLinkMenu() {
 export type RowLinkMenuState = ReturnType<typeof useRowLinkMenu>;
 
 export const hasDependencyBadges = (flags: DependencyFlags | undefined) =>
-  !!flags && (flags.waitingOn.length > 0 || flags.holding.length > 0 || flags.cleared);
+  !!flags && (flags.waitingOn.length > 0 || (flags.holding.length > 0 && flags.waitingOn.length === 0) || flags.cleared);
 
 /** The row's ⛔ / ! / ✓ icons; with edit rights clicking them opens the link editor. */
 export function RowDependencyIcons({

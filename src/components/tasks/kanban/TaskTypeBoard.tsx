@@ -225,7 +225,9 @@ function TaskCard({
       {parentTitle && <div className="mb-0.5 truncate text-[11px] text-gray-400">{parentTitle}</div>}
       <div className={`flex min-w-0 items-center gap-1 text-[13px] font-semibold ${done ? "text-gray-500" : "text-gray-900"}`}>
         {dependency?.waitingOn.length ? <WAIT_STYLE.Icon className={`h-3.5 w-3.5 shrink-0 ${WAIT_STYLE.text}`} /> : null}
-        {dependency?.holding.length ? <HOLD_STYLE.Icon className={`h-3.5 w-3.5 shrink-0 ${HOLD_STYLE.text}`} /> : null}
+        {dependency?.holding.length && !dependency.waitingOn.length ? (
+          <HOLD_STYLE.Icon className={`h-3.5 w-3.5 shrink-0 ${HOLD_STYLE.text}`} />
+        ) : null}
         {done && <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />}
         <span className={`truncate ${done ? "line-through decoration-gray-400" : ""}`}>{task.title}</span>
       </div>

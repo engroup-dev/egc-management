@@ -105,6 +105,10 @@ function Chip({ style, count, label }: { style: typeof WAIT_STYLE | typeof HOLD_
 export default function DependencyBadges({ flags }: { flags: DependencyFlags | undefined }) {
   if (!flags) return null;
   const { waitingOn, holding, cleared } = flags;
+  // A task is only an active blocker ("مهام تنتظرها") if it is not blocked itself.
+  // If it's still waiting on predecessors to finish, we don't display the holding badge on it yet.
+  const isActivelyHolding = holding.length > 0 && waitingOn.length === 0;
+
   return (
     <>
       {waitingOn.length > 0 && <Chip style={WAIT_STYLE} count={waitingOn.length} label={waitingLabel(waitingOn)} />}
@@ -113,7 +117,7 @@ export default function DependencyBadges({ flags }: { flags: DependencyFlags | u
           <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-500" aria-label={CLEARED_LABEL} />
         </Tooltip>
       )}
-      {holding.length > 0 && <Chip style={HOLD_STYLE} count={holding.length} label={holdingLabel(holding)} />}
+      {isActivelyHolding && <Chip style={HOLD_STYLE} count={holding.length} label={holdingLabel(holding)} />}
     </>
   );
 }

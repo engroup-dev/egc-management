@@ -1,7 +1,7 @@
 {
   "name": "egc-management",
   "productName": "egc-management",
-  "version": "1.1.30",
+  "version": "1.1.31",
   "description": "Finance and management Application for EGC",
   "repository": {
     "type": "git",
@@ -70,6 +70,7 @@
     "leaflet": "^1.9.4",
     "localforage": "^1.10.0",
     "lucide-react": "^0.552.0",
+    "pdf-lib": "^1.17.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-hook-form": "^7.66.0",

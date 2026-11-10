@@ -116,13 +116,14 @@ export default function StartDateCell({
     );
   }
 
+  const daysInfo = startDate ? daysPassedLabel(startDate) : "";
   const tooltip = !startDate
     ? ""
     : isSummary
-      ? `${formatSlashDate(startDate)} · محسوب من المهام الفرعية`
+      ? `${formatSlashDate(startDate)} (${daysInfo}) · محسوب من المهام الفرعية`
       : linked
-        ? `${formatSlashDate(startDate)} · تبدأ بعد انتهاء المهام السابقة${lagDays > 0 ? ` + انتظار ${lagDays} يوم عمل` : ""}`
-        : formatSlashDate(startDate);
+        ? `${formatSlashDate(startDate)} (${daysInfo}) · تبدأ بعد انتهاء المهام السابقة${lagDays > 0 ? ` + انتظار ${lagDays} يوم عمل` : ""}`
+        : `${formatSlashDate(startDate)} (${daysInfo})`;
 
   return (
     <div ref={ref} className="relative">
@@ -135,7 +136,7 @@ export default function StartDateCell({
             }`}
           >
             {linked && !isSummary && <Link2 className="h-3.5 w-3.5 shrink-0 text-primary" />}
-            {daysPassedLabel(startDate)}
+            {formatSlashDate(startDate)}
             {linked && lagDays > 0 && <span className="text-[10px] font-bold text-amber-600">+{lagDays}</span>}
           </button>
         </Tooltip>

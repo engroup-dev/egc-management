@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { PDFDocument } from "pdf-lib";
 import { supabase } from "../../lib/supabaseClient";
 import { agreementsDb } from "../../lib/agreementsDb";
 import { fetchManagementApi } from "../../lib/managementApiClient";
+import { attachmentUrl } from "./useAgreements";
 import type { AgreementDetail, AgreementItem, PenaltyRow } from "../../types/agreements.types";
 import {
   changesInVersion,
@@ -190,6 +192,81 @@ async function fullBody(detail: AgreementDetail) {
   };
 }
 
+async function appendAttachmentsToPdf(
+  basePdfBytes: ArrayBuffer,
+  attachments: AgreementDetail["attachments"],
+): Promise<Uint8Array> {
+  if (!attachments || attachments.length === 0) {
+    return new Uint8Array(basePdfBytes);
+  }
+
+  const pdfDoc = await PDFDocument.load(basePdfBytes);
+
+  for (const att of attachments) {
+    try {
+      const url = attachmentUrl(att.file_path);
+      const res = await fetch(url);
+      if (!res.ok) continue;
+
+      const fileBuffer = await res.arrayBuffer();
+      const bytes = new Uint8Array(fileBuffer);
+
+      // PNG magic number: 89 50 4E 47
+      const isPng =
+        bytes[0] === 0x89 &&
+        bytes[1] === 0x50 &&
+        bytes[2] === 0x4e &&
+        bytes[3] === 0x47;
+      // JPEG magic number: FF D8 FF
+      const isJpg =
+        bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+      // PDF magic number: %PDF (25 50 44 46)
+      const isPdf =
+        bytes[0] === 0x25 &&
+        bytes[1] === 0x50 &&
+        bytes[2] === 0x44 &&
+        bytes[3] === 0x46;
+
+      if (isPdf) {
+        const attachedPdf = await PDFDocument.load(fileBuffer);
+        const copiedPages = await pdfDoc.copyPages(
+          attachedPdf,
+          attachedPdf.getPageIndices(),
+        );
+        copiedPages.forEach((p) => pdfDoc.addPage(p));
+      } else if (isJpg || isPng) {
+        const img = isPng
+          ? await pdfDoc.embedPng(fileBuffer)
+          : await pdfDoc.embedJpg(fileBuffer);
+
+        const pageWidth = 595.28;
+        const pageHeight = 841.89;
+        const margin = 36;
+        const maxWidth = pageWidth - margin * 2;
+        const maxHeight = pageHeight - margin * 2;
+
+        const scale = Math.min(maxWidth / img.width, maxHeight / img.height, 1);
+        const drawWidth = img.width * scale;
+        const drawHeight = img.height * scale;
+        const x = (pageWidth - drawWidth) / 2;
+        const y = (pageHeight - drawHeight) / 2;
+
+        const page = pdfDoc.addPage([pageWidth, pageHeight]);
+        page.drawImage(img, {
+          x,
+          y,
+          width: drawWidth,
+          height: drawHeight,
+        });
+      }
+    } catch (err) {
+      console.warn("Could not embed attachment in PDF:", att.file_name, err);
+    }
+  }
+
+  return pdfDoc.save();
+}
+
 export function useAgreementPdf() {
   const [loading, setLoading] = useState<"agreement" | "full" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -204,7 +281,17 @@ export function useAgreementPdf() {
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
       );
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      const url = URL.createObjectURL(await res.blob());
+
+      let blob: Blob;
+      if (kind === "full" && detail.attachments && detail.attachments.length > 0) {
+        const baseBuffer = await res.arrayBuffer();
+        const mergedBytes = await appendAttachmentsToPdf(baseBuffer, detail.attachments);
+        blob = new Blob([mergedBytes], { type: "application/pdf" });
+      } else {
+        blob = await res.blob();
+      }
+
+      const url = URL.createObjectURL(blob);
       window.open(url, "_blank");
       setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch (err) {

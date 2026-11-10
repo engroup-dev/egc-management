@@ -99,10 +99,17 @@ export function isCompletedToday(ts: string | null, now: Date = new Date()): boo
   return t >= start && t < end;
 }
 
-/** "2026/1/1" — plain numeric, no leading zeros. */
+/** "2026/01/01" — formatted numeric date. */
 export function formatSlashDate(dateStr: string): string {
+  if (!dateStr) return "";
+  if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+    const [y, m, d] = dateStr.slice(0, 10).split("-");
+    return `${y}/${m}/${d}`;
+  }
   const d = new Date(dateStr);
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+  if (isNaN(d.getTime())) return dateStr;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`;
 }
 
 /** "2026/1/1 2:30 م" — the slash date plus a 12-hour local time. Used for

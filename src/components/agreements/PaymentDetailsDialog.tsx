@@ -1,14 +1,16 @@
-import { FileSignature } from "lucide-react";
+import { FileSignature, FileText, Printer } from "lucide-react";
 import Dialog from "../ui/Dialog";
 import Badge from "../ui/Badge";
 import Button from "../ui/Button";
 import LoadingSpinner from "../ui/LoadingSpinner";
 import ContractPaymentActionsCell from "../tables/actions/payments/ContractPaymentActionsCell";
 import { useAgreementDetail } from "../../hooks/agreements/useAgreements";
+import { useAgreementPdf } from "../../hooks/agreements/useAgreementPdf";
 import type { ContractPayment } from "../../types/contracts.type";
 import { currentItems, lineText, PAYMENT_STATUS } from "../../utils/agreements/versions";
 import { formatCurrency, formatDate } from "../../utils/helpper";
 import { translatePaymentMethod } from "../../utils/translations";
+import AgreementAttachments from "./AgreementAttachments";
 
 // =====================================================================
 // One payment, everything the approver needs before accept / decline
@@ -29,6 +31,7 @@ type Props = {
 export default function PaymentDetailsDialog({ payment, onClose, onOpenAgreement, onDecided }: Props) {
   const agreementId = payment?.agreement_id ?? null;
   const { data: detail, isLoading } = useAgreementDetail(agreementId);
+  const pdf = useAgreementPdf();
 
   if (!payment) return null;
 
@@ -68,14 +71,36 @@ export default function PaymentDetailsDialog({ payment, onClose, onOpenAgreement
             title="الاتفاقية"
             action={
               a && (
-                <Button
-                  type="button"
-                  size="xs"
-                  variant="primary-outline"
-                  onClick={() => onOpenAgreement(a.id, a.project_id)}
-                >
-                  <FileSignature className="w-3.5 h-3.5 ml-1" /> فتح الاتفاقية
-                </Button>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="primary-outline"
+                    disabled={!!pdf.loading}
+                    onClick={() => detail && pdf.print("agreement", detail)}
+                  >
+                    <Printer className="w-3.5 h-3.5 ml-1" />
+                    {pdf.loading === "agreement" ? "جاري التجهيز..." : "طباعة الاتفاقية"}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="primary-outline"
+                    disabled={!!pdf.loading}
+                    onClick={() => detail && pdf.print("full", detail)}
+                  >
+                    <FileText className="w-3.5 h-3.5 ml-1" />
+                    {pdf.loading === "full" ? "جاري التجهيز..." : "الملف الكامل"}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="primary-outline"
+                    onClick={() => onOpenAgreement(a.id, a.project_id)}
+                  >
+                    <FileSignature className="w-3.5 h-3.5 ml-1" /> فتح الاتفاقية
+                  </Button>
+                </div>
               )
             }
           >
@@ -92,6 +117,14 @@ export default function PaymentDetailsDialog({ payment, onClose, onOpenAgreement
                   <Stat label="هذه الدفعة" value={amount} strong />
                   <Stat label="المتبقي بعدها" value={a.total - prev - amount} />
                 </div>
+                {pdf.error && (
+                  <p className="text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2">{pdf.error}</p>
+                )}
+                <AgreementAttachments
+                  agreementId={a.id}
+                  attachments={detail?.attachments ?? []}
+                  canAdd={false}
+                />
                 <details className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
                   <summary className="cursor-pointer text-sm text-gray-600">
                     بنود الاتفاقية ({currentItems(detail.items).length})

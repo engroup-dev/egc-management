@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import {
   AlarmClock,
+  CalendarClock,
+  Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   CircleDashed,
-  CalendarClock,
   Layers,
   Loader,
+  MapPin,
+  Play,
   Presentation,
   RefreshCw,
   UserX,
@@ -18,9 +21,13 @@ import type { TaskDirectoryData } from "../../../hooks/tasks/useTaskDirectory";
 import type { Priority, TaskRow } from "../../../hooks/tasks/useTaskBoard";
 import {
   buildTourSnapshot,
+  categoryOf,
   completionStats,
+  fitsSlide,
   groupByBoard,
   isDueThisWeek,
+  isDueToStart,
+  isOpenCategory,
   slideOf,
   TOUR_SLIDE_BY_KEY,
   TOUR_SLIDES,
@@ -133,7 +140,7 @@ function SummarySlide({
   onJump: (index: number) => void;
 }) {
   const stats = completionStats(data);
-  const openCount = snapshot.overdue.length + snapshot.in_progress.length + snapshot.not_started.length + snapshot.unassigned.length;
+  const openCount = data.tasks.filter((t) => isOpenCategory(categoryOf(t, data))).length;
   const dueThisWeek = data.tasks.filter((t) => isDueThisWeek(t, data, now)).length;
   const boardCount = data.boardNamesById.size;
 
@@ -204,23 +211,193 @@ function TaskSlide({
   tasks,
   data,
   now,
+  selectedBoardId,
+  onSelectBoard,
   handlers,
 }: {
   meta: TourSlideMeta;
   tasks: TaskRow[];
   data: TaskDirectoryData;
   now: number;
+  selectedBoardId: string | "all";
+  onSelectBoard: (boardId: string | "all") => void;
   handlers: RowHandlers;
 }) {
-  const groups = useMemo(() => groupByBoard(tasks, data), [tasks, data]);
+  const [inProgressFilter, setInProgressFilter] = useState<"all" | "active" | "due_to_start">("all");
+
+  const activeStatus = useMemo(() => data.statuses.find((s) => s.category === "active"), [data.statuses]);
+  const doneStatus = useMemo(() => data.statuses.find((s) => s.category === "done"), [data.statuses]);
+
+  const boardsList = useMemo(() => {
+    return Array.from(data.boardNamesById.entries())
+      .map(([id, name]) => ({
+        id,
+        name,
+        order: data.boardOrderById.get(id) ?? Number.MAX_SAFE_INTEGER,
+      }))
+      .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "ar"));
+  }, [data.boardNamesById, data.boardOrderById]);
+
+  const boardTaskCount = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const t of tasks) {
+      map.set(t.board_id, (map.get(t.board_id) ?? 0) + 1);
+    }
+    return map;
+  }, [tasks]);
+
+  const activeTasks = useMemo(
+    () => tasks.filter((t) => categoryOf(t, data) === "active"),
+    [tasks, data],
+  );
+
+  const dueToStartTasks = useMemo(
+    () => tasks.filter((t) => isDueToStart(t, data, now)),
+    [tasks, data, now],
+  );
+
+  const displayedTasks = useMemo(() => {
+    let list = tasks;
+    if (selectedBoardId !== "all") {
+      list = list.filter((t) => t.board_id === selectedBoardId);
+    }
+    if (meta.key === "in_progress") {
+      if (inProgressFilter === "active") return list.filter((t) => categoryOf(t, data) === "active");
+      if (inProgressFilter === "due_to_start") return list.filter((t) => isDueToStart(t, data, now));
+    }
+    return list;
+  }, [meta.key, selectedBoardId, inProgressFilter, tasks, data, now]);
+
+  const groups = useMemo(() => groupByBoard(displayedTasks, data), [displayedTasks, data]);
   const showCompleted = meta.key === "recent_done";
   const Icon = SLIDE_ICONS[meta.key];
 
   return (
     <div className="mx-auto max-w-6xl">
-      <SlideHeading meta={meta} count={tasks.length} />
+      <SlideHeading meta={meta} count={displayedTasks.length} />
 
-      {tasks.length === 0 ? (
+      {/* Board / Zone filter */}
+      {boardsList.length > 1 && (
+        <div className="mb-4 flex flex-wrap items-center gap-1.5 rounded-xl border border-gray-200/80 bg-white p-2 shadow-xs">
+          <span className="flex items-center gap-1.5 px-2 text-xs font-bold text-gray-600">
+            <MapPin className="h-3.5 w-3.5 text-primary" />
+            <span>المنطقة:</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => onSelectBoard("all")}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold transition cursor-pointer ${
+              selectedBoardId === "all"
+                ? "bg-slate-900 text-white shadow-xs"
+                : "bg-gray-50 text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            <span>كل المناطق</span>
+            <span
+              className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                selectedBoardId === "all" ? "bg-white/20 text-white" : "bg-gray-200 text-gray-600"
+              }`}
+            >
+              {tasks.length}
+            </span>
+          </button>
+          {boardsList.map((board) => {
+            const count = boardTaskCount.get(board.id) ?? 0;
+            const isSelected = selectedBoardId === board.id;
+            return (
+              <button
+                key={board.id}
+                type="button"
+                onClick={() => onSelectBoard(isSelected ? "all" : board.id)}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold transition cursor-pointer ${
+                  isSelected
+                    ? "bg-primary text-white shadow-xs"
+                    : count > 0
+                      ? "bg-white border border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50"
+                      : "bg-gray-50 text-gray-400 opacity-60 hover:opacity-100"
+                }`}
+              >
+                <span>{board.name}</span>
+                <span
+                  className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                    isSelected
+                      ? "bg-white/20 text-white"
+                      : count > 0
+                        ? "bg-gray-100 text-gray-600"
+                        : "bg-gray-100 text-gray-400"
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* In-progress status subfilter */}
+      {meta.key === "in_progress" && (
+        <div className="mb-5 flex flex-wrap items-center gap-2 border-b border-gray-100 pb-3">
+          <button
+            type="button"
+            onClick={() => setInProgressFilter("all")}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+              inProgressFilter === "all"
+                ? "bg-purple-600 text-white shadow-sm"
+                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+            }`}
+          >
+            <span>الكل</span>
+            <span
+              className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${
+                inProgressFilter === "all" ? "bg-white/20 text-white" : "bg-gray-200 text-gray-600"
+              }`}
+            >
+              {tasks.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setInProgressFilter("active")}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+              inProgressFilter === "active"
+                ? "bg-purple-600 text-white shadow-sm"
+                : "bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200/50"
+            }`}
+          >
+            <span>قيد التنفيذ حالياً</span>
+            <span
+              className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${
+                inProgressFilter === "active" ? "bg-white/20 text-white" : "bg-purple-100 text-purple-800"
+              }`}
+            >
+              {activeTasks.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setInProgressFilter("due_to_start")}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+              inProgressFilter === "due_to_start"
+                ? "bg-amber-600 text-white shadow-sm"
+                : "bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200/60"
+            }`}
+          >
+            <span>تاريخها جاء ولم تبدأ</span>
+            <span
+              className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${
+                inProgressFilter === "due_to_start" ? "bg-white/20 text-white" : "bg-amber-100 text-amber-900"
+              }`}
+            >
+              {dueToStartTasks.length}
+            </span>
+          </button>
+        </div>
+      )}
+
+      {displayedTasks.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-gray-200 py-20 text-gray-400">
           {/* An empty problem slide is good news; an empty "finished" slide isn't. */}
           {meta.key === "recent_done" ? (
@@ -233,6 +410,15 @@ function TaskSlide({
             </span>
           )}
           <span className="text-base">{meta.empty}</span>
+          {selectedBoardId !== "all" && (
+            <button
+              type="button"
+              onClick={() => onSelectBoard("all")}
+              className="mt-1 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-200 transition cursor-pointer"
+            >
+              عرض كل المناطق
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-4">
@@ -258,13 +444,57 @@ function TaskSlide({
               {group.tasks.map((task) => {
                 // Edited since the tour opened and no longer fits this slide:
                 // keep it in place, dimmed, and say where it would go now.
+                const moved = !fitsSlide(meta.key, task, data, now);
                 const current = slideOf(task, data, now);
-                const moved = current !== meta.key;
-                const badge = moved ? (
-                  <Pill text={`✓ تم التحديث ← ${current ? TOUR_SLIDE_BY_KEY[current].label : "مغلقة"}`} tone="#059669" />
-                ) : isDueThisWeek(task, data, now) ? (
-                  <Pill text="هذا الأسبوع" tone="#2563EB" />
-                ) : null;
+                const category = categoryOf(task, data);
+                const dueStart = isDueToStart(task, data, now);
+
+                let quickAction: ReactNode = null;
+                if (category === "not_started" && activeStatus) {
+                  quickAction = (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlers.onChangeStatus(task.id, activeStatus.id);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-md bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 px-2 py-0.5 text-[11px] font-bold transition shadow-2xs hover:shadow-xs shrink-0 cursor-pointer"
+                      title="بدء العمل على المهمة فوراً (تحويل إلى قيد التنفيذ)"
+                    >
+                      <Play className="h-2.5 w-2.5 fill-current text-purple-600" />
+                      <span>بدء العمل</span>
+                    </button>
+                  );
+                } else if (category === "active" && doneStatus) {
+                  quickAction = (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlers.onChangeStatus(task.id, doneStatus.id);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-2 py-0.5 text-[11px] font-bold transition shadow-2xs hover:shadow-xs shrink-0 cursor-pointer"
+                      title="تحديد المهمة كمنجزة فوراً"
+                    >
+                      <Check className="h-3 w-3 stroke-[2.5] text-emerald-600" />
+                      <span>إنجاز المهمة</span>
+                    </button>
+                  );
+                }
+
+                const badge = (
+                  <div className="inline-flex items-center gap-1.5 shrink-0">
+                    {moved ? (
+                      <Pill text={`✓ تم التحديث ← ${current ? TOUR_SLIDE_BY_KEY[current].label : "مغلقة"}`} tone="#059669" />
+                    ) : dueStart && meta.key === "in_progress" ? (
+                      <Pill text="يفترض أنها بدأت" tone="#D97706" />
+                    ) : isDueThisWeek(task, data, now) ? (
+                      <Pill text="هذا الأسبوع" tone="#2563EB" />
+                    ) : null}
+                    {quickAction}
+                  </div>
+                );
+
                 return (
                   <div key={task.id} className={moved ? "bg-emerald-50/40 opacity-60 transition-opacity hover:opacity-100" : undefined}>
                     <DirectoryTaskRow
@@ -311,6 +541,7 @@ export default function SpaceTourDialog({
 }: Props) {
   const [now, setNow] = useState(() => Date.now());
   const [snapshot, setSnapshot] = useState(() => buildTourSnapshot(data, now));
+  const [selectedBoardId, setSelectedBoardId] = useState<string | "all">("all");
   // 0 = summary, then one per TOUR_SLIDES entry
   const [index, setIndex] = useState(0);
   const slideCount = TOUR_SLIDES.length + 1;
@@ -416,7 +647,15 @@ export default function SpaceTourDialog({
         {/* Slide */}
         <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto px-8 py-6">
           {meta ? (
-            <TaskSlide meta={meta} tasks={tasksFor(meta.key)} data={data} now={now} handlers={handlers} />
+            <TaskSlide
+              meta={meta}
+              tasks={tasksFor(meta.key)}
+              data={data}
+              now={now}
+              selectedBoardId={selectedBoardId}
+              onSelectBoard={setSelectedBoardId}
+              handlers={handlers}
+            />
           ) : (
             <SummarySlide
               data={data}

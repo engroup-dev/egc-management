@@ -6,20 +6,14 @@ import { sortDirectoryTasks } from "../board/directoryFilters";
 // Space tour — which task goes on which slide. Pure functions, no React,
 // so the rules live in one readable place (SpaceTourDialog only renders).
 // =====================================================================
-// Every open task lands on exactly ONE slide — the first rule it matches,
-// so the four open slides add up to the space's open total:
+// Every open task is organized across slides for the site tour:
 //
-//   1. overdue       open and tasks.is_overdue (same flag as the KPI strip
-//                    and the red badges in the lists)
-//   2. unassigned    open, not overdue, nobody assigned
-//   3. in progress   status category "active"
-//   4. not started   status category "not_started"
+//   1. overdue       open and tasks.is_overdue (same flag as the KPI strip)
+//   2. in progress   status category "active" OR start date has arrived/passed (isDueToStart)
+//   3. not started   status category "not_started" (future or unscheduled)
+//   4. unassigned    open, nobody assigned
 //
-// (Unassigned is matched before in progress / not started — an ownerless
-// task's real problem is that nobody owns it — but SHOWN after them.)
-//
-// Plus a last slide of what was finished in the last 7 days. "Open" is the
-// not_started/active categories, same as everywhere else in the module.
+// Plus a last slide of what was finished in the last 7 days.
 
 export type TourSlideKey = "overdue" | "in_progress" | "not_started" | "unassigned" | "recent_done";
 
@@ -45,14 +39,14 @@ export const TOUR_SLIDES: TourSlideMeta[] = [
   {
     key: "in_progress",
     label: "قيد التنفيذ",
-    subtitle: "بدأ العمل عليها — تابع أين وصلت",
-    empty: "لا توجد مهام قيد التنفيذ",
+    subtitle: "بدأ العمل عليها أو حان موعد بدئها — تابع الإنجاز",
+    empty: "لا توجد مهام قيد التنفيذ أو مستحقة البدء",
     tone: "#8B5CF6",
   },
   {
     key: "not_started",
     label: "لم تبدأ",
-    subtitle: "مسندة لكن لم يبدأ العمل عليها بعد",
+    subtitle: "مهام مجدولة لم يحن موعدها بعد أو بانتظار الانطلاق",
     empty: "لا توجد مهام بانتظار البدء",
     tone: "#64748B",
   },
@@ -83,14 +77,46 @@ const DUE_SOON_DAYS = 7;
 
 export type TourSnapshot = Record<TourSlideKey, string[]>;
 
-function categoryOf(task: TaskRow, data: TaskDirectoryData) {
+export function categoryOf(task: TaskRow, data: TaskDirectoryData): string | null {
   return data.statuses.find((s) => s.id === task.status_id)?.category ?? null;
 }
 
-const isOpenCategory = (c: string | null) => c === "not_started" || c === "active";
+export const isOpenCategory = (c: string | null) => c === "not_started" || c === "active";
 
-/** The slide a task belongs on right now — null when it belongs on none
- * (cancelled, or finished more than 7 days ago). */
+/** Whether task is not_started but its scheduled start_date has arrived or passed. */
+export function isDueToStart(task: TaskRow, data: TaskDirectoryData, now: number): boolean {
+  const category = categoryOf(task, data);
+  if (category !== "not_started" || !task.start_date) return false;
+  const d = new Date(now);
+  const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return task.start_date.slice(0, 10) <= todayStr;
+}
+
+/** Whether task fits a given slide. */
+export function fitsSlide(key: TourSlideKey, task: TaskRow, data: TaskDirectoryData, now: number): boolean {
+  const category = categoryOf(task, data);
+  if (category === "done") {
+    if (key !== "recent_done") return false;
+    const at = task.completed_at ? new Date(task.completed_at).getTime() : 0;
+    return at >= now - RECENT_DAYS * DAY_MS;
+  }
+  if (!isOpenCategory(category)) return false;
+
+  switch (key) {
+    case "overdue":
+      return !!task.is_overdue;
+    case "in_progress":
+      return category === "active" || isDueToStart(task, data, now);
+    case "not_started":
+      return category === "not_started" && !isDueToStart(task, data, now);
+    case "unassigned":
+      return (data.assigneesByTask.get(task.id) ?? []).length === 0;
+    case "recent_done":
+      return false;
+  }
+}
+
+/** Primary slide a task belongs on right now — null when it belongs on none */
 export function slideOf(task: TaskRow, data: TaskDirectoryData, now: number): TourSlideKey | null {
   const category = categoryOf(task, data);
   if (category === "done") {
@@ -98,9 +124,10 @@ export function slideOf(task: TaskRow, data: TaskDirectoryData, now: number): To
     return at >= now - RECENT_DAYS * DAY_MS ? "recent_done" : null;
   }
   if (!isOpenCategory(category)) return null;
+  if (category === "active" || isDueToStart(task, data, now)) return "in_progress";
   if (task.is_overdue) return "overdue";
   if ((data.assigneesByTask.get(task.id) ?? []).length === 0) return "unassigned";
-  return category === "active" ? "in_progress" : "not_started";
+  return "not_started";
 }
 
 /** Which tasks go on which slide, taken once when the tour opens. Kept as
@@ -114,9 +141,28 @@ export function buildTourSnapshot(data: TaskDirectoryData, now: number): TourSna
     unassigned: [],
     recent_done: [],
   };
+
   for (const task of data.tasks) {
-    const key = slideOf(task, data, now);
-    if (key) buckets[key].push(task);
+    const category = categoryOf(task, data);
+    if (category === "done") {
+      const at = task.completed_at ? new Date(task.completed_at).getTime() : 0;
+      if (at >= now - RECENT_DAYS * DAY_MS) buckets.recent_done.push(task);
+      continue;
+    }
+    if (!isOpenCategory(category)) continue;
+
+    if (task.is_overdue) {
+      buckets.overdue.push(task);
+    }
+    if (category === "active" || isDueToStart(task, data, now)) {
+      buckets.in_progress.push(task);
+    }
+    if (category === "not_started" && !isDueToStart(task, data, now)) {
+      buckets.not_started.push(task);
+    }
+    if ((data.assigneesByTask.get(task.id) ?? []).length === 0) {
+      buckets.unassigned.push(task);
+    }
   }
 
   const ids = (tasks: TaskRow[]) => tasks.map((t) => t.id);

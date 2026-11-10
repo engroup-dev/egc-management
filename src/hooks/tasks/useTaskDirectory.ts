@@ -615,6 +615,6 @@ export function useTaskDirectory(options?: { spaceId?: string }) {
       change: { startDate?: string | null; dueDate?: string | null; durationDays?: number },
     ) => updateTaskDates.mutate({ taskId, ...change }),
     onChangeAssignees: (taskId: string, userIds: string[]) => setAssignees.mutate({ taskId, userIds }),
-    onCreateTask: (boardId: string, title: string) => createTask.mutate({ boardId, title }),
+    onCreateTask: (boardId: string, title: string) => createTask.mutateAsync({ boardId, title }),
   };
 }

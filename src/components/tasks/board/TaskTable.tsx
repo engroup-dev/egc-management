@@ -1,5 +1,5 @@
 import { cloneElement, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { Plus, MoreHorizontal, ChevronsDown, ChevronsUp, ArrowDownWideNarrow, ArrowUpNarrowWide, Eye, EyeOff, Clock, RotateCcw } from "lucide-react";
+import { Plus, MoreHorizontal, ChevronsDown, ChevronsUp, ArrowDownWideNarrow, ArrowUpNarrowWide, Eye, EyeOff, Clock, RotateCcw, Maximize2, X } from "lucide-react";
 import TaskRow, { rowGridStyle } from "./TaskRow";
 import { BoardColumnProvider, useBoardColumns, ResizableBoardHeaderCell } from "./BoardColumnContext";
 import BulkActionPanel from "./BulkActionPanel";
@@ -69,6 +69,7 @@ interface TaskTableProps {
   onChangeLag: (taskId: string, lagDays: number) => void;
   onChangeAssignees: (taskId: string, userIds: string[]) => void;
   onCreateTask: (title: string, parentTaskId: string | null) => void;
+  onCreateTaskInline?: (title: string) => Promise<unknown> | void;
   onRenameTask?: (taskId: string, title: string) => void;
   onChangeValue: (taskId: string, fieldDefinitionId: string, value: Json) => void;
   onAttachField: (fieldDefinitionId: string) => void;
@@ -125,6 +126,7 @@ function TaskTableInner({
   onChangeLag,
   onChangeAssignees,
   onCreateTask,
+  onCreateTaskInline,
   onRenameTask,
   onChangeValue,
   onAttachField,
@@ -147,6 +149,10 @@ function TaskTableInner({
   const [showColumnEditor, setShowColumnEditor] = useState(false);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isInlineAdding, setIsInlineAdding] = useState(false);
+  const [inlineTitle, setInlineTitle] = useState("");
+  const [submittingInline, setSubmittingInline] = useState(false);
+  const inlineInputRef = useRef<HTMLInputElement>(null);
   const { spaceCaps, assigneeCaps, myUserId } = useBoardAccess();
   // What I may do on a given task: the space's rights plus an assignee's own.
   const capsOf = (taskId: string) =>
@@ -686,15 +692,91 @@ function TaskTableInner({
         )}
 
         {spaceCaps.create && (
-          // A task needs a start and its working days, so adding one always
-          // goes through the create dialog.
-          <button
-            onClick={() => onCreateTask("", null)}
-            className="flex w-full items-center gap-2 border-b border-gray-100 px-3 py-2 text-sm text-gray-400 hover:bg-gray-50 hover:text-gray-600"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            إضافة مهمة
-          </button>
+          isInlineAdding ? (
+            <div
+              style={currentGridStyle}
+              className="border-b border-blue-200 bg-blue-50/40 px-3 py-1.5 transition-colors items-center"
+            >
+              <div className="flex items-center gap-2">
+                <input
+                  ref={inlineInputRef}
+                  type="text"
+                  value={inlineTitle}
+                  onChange={(e) => setInlineTitle(e.target.value)}
+                  onKeyDown={async (e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      if (!inlineTitle.trim() || submittingInline) return;
+                      setSubmittingInline(true);
+                      try {
+                        if (onCreateTaskInline) {
+                          await onCreateTaskInline(inlineTitle.trim());
+                        } else {
+                          onCreateTask(inlineTitle.trim(), null);
+                        }
+                        setInlineTitle("");
+                        setTimeout(() => inlineInputRef.current?.focus(), 50);
+                      } finally {
+                        setSubmittingInline(false);
+                      }
+                    } else if (e.key === "Escape") {
+                      setIsInlineAdding(false);
+                      setInlineTitle("");
+                    }
+                  }}
+                  autoFocus
+                  placeholder="اكتب عنوان المهمة واضغط Enter للإضافة السريعة... (Esc للإلغاء)"
+                  disabled={submittingInline}
+                  className="w-full bg-white border border-blue-300 rounded px-2.5 py-1 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                />
+                <button
+                  type="button"
+                  title="فتح تفاصيل المهمة كاملة"
+                  onClick={() => {
+                    onCreateTask(inlineTitle, null);
+                    setIsInlineAdding(false);
+                    setInlineTitle("");
+                  }}
+                  className="p-1 text-slate-400 hover:text-blue-600 rounded hover:bg-white transition-colors"
+                >
+                  <Maximize2 className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  title="إلغاء (Esc)"
+                  onClick={() => {
+                    setIsInlineAdding(false);
+                    setInlineTitle("");
+                  }}
+                  className="p-1 text-slate-400 hover:text-red-500 rounded hover:bg-white transition-colors"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              <div className="text-xs text-slate-400 pr-1">لم يبدأ</div>
+              {featureSettings.priorities && <div className="text-xs text-slate-300">-</div>}
+              <div className="text-xs text-slate-300">-</div>
+              <div className="text-xs text-slate-300">-</div>
+              <div className="text-xs text-slate-300">-</div>
+              <div className="text-xs text-slate-300">-</div>
+              <div className="text-xs text-slate-300">-</div>
+              {customColumns.map((col) => (
+                <div key={col.boardColumnId} className="text-xs text-slate-300">-</div>
+              ))}
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                setIsInlineAdding(true);
+                setTimeout(() => inlineInputRef.current?.focus(), 50);
+              }}
+              className="flex w-full items-center gap-2 border-b border-gray-100 px-3 py-2 text-sm text-gray-400 hover:bg-gray-50 hover:text-gray-600 transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>إضافة مهمة</span>
+            </button>
+          )
         )}
       </div>
 

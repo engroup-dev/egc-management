@@ -8,11 +8,42 @@ import { emitDoneNotice, recordAction } from "./taskUndo";
 // task's own predecessors, so the chain keeps its shape meanwhile.
 
 async function setArchived(taskIds: string[], archived: boolean): Promise<string[]> {
-  const { data, error } = await supabase
-    .schema("tasks")
-    .rpc("set_tasks_archived", { p_task_ids: taskIds, p_archived: archived });
-  if (error) throw error;
-  return data ?? [];
+  if (taskIds.length === 0) return [];
+
+  // Direct table update with recursive descendant subtasks
+  const tasksDb = supabase.schema("tasks");
+  let currentParentIds = [...taskIds];
+  const allIds = new Set<string>(taskIds);
+
+  while (currentParentIds.length > 0) {
+    const { data: children, error: fetchErr } = await tasksDb
+      .from("tasks")
+      .select("id")
+      .in("parent_task_id", currentParentIds);
+
+    if (fetchErr || !children || children.length === 0) break;
+    const nextParentIds: string[] = [];
+    for (const child of children) {
+      if (!allIds.has(child.id)) {
+        allIds.add(child.id);
+        nextParentIds.push(child.id);
+      }
+    }
+    currentParentIds = nextParentIds;
+  }
+
+  const idsToUpdate = Array.from(allIds);
+  const { error: updateErr } = await tasksDb
+    .from("tasks")
+    .update({ is_archived: archived })
+    .in("id", idsToUpdate);
+
+  if (updateErr) {
+    console.error("Error archiving tasks:", updateErr);
+    throw updateErr;
+  }
+
+  return idsToUpdate;
 }
 
 /** Archives the tasks (and their subtasks) as one undo entry. Returns every id archived. */

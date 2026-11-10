@@ -1,5 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { supabase } from "../../lib/supabaseClient";
+import { invalidateSchedule } from "../../hooks/tasks/useTaskSchedule";
 import { FileStack, ChevronRight, List, ChartGantt, Workflow, SquareKanban, Download, Link2, ArrowLeftRight } from "lucide-react";
 import { useTaskBoard } from "../../hooks/tasks/useTaskBoard";
 import TaskTable from "../../components/tasks/board/TaskTable";
@@ -140,6 +143,32 @@ export default function TaskBoardPage({ view }: { view: BoardView }) {
   // the create dialog.
   const addTask = (title: string, parentTaskId: string | null) =>
     openCreateTask({ boardId: data.board.id, parentTaskId, title });
+
+  const queryClient = useQueryClient();
+
+  const createTaskInline = async (title: string) => {
+    if (!title.trim() || !userId) return;
+    const firstOpenStatus =
+      data.statuses.find((s) => s.category === "not_started") ?? data.statuses[0];
+    if (!firstOpenStatus) return;
+
+    const maxSort = data.tasks
+      .filter((t) => !t.parent_task_id)
+      .reduce((max, t) => Math.max(max, t.sort_order), -1);
+
+    const { error } = await supabase.schema("tasks").from("tasks").insert({
+      board_id: data.board.id,
+      parent_task_id: null,
+      title: title.trim(),
+      status_id: firstOpenStatus.id,
+      project_id: data.projectId,
+      created_by: userId,
+      sort_order: maxSort + 1,
+    });
+    if (error) throw error;
+    invalidateSchedule(queryClient, data.board.id);
+    await queryClient.invalidateQueries({ queryKey: ["task-board", data.board.id] });
+  };
 
   // Without a view on the whole space (an assignee reaching the board from
   // the sidebar) the board shows only the tasks assigned to me. A task whose
@@ -370,6 +399,7 @@ export default function TaskBoardPage({ view }: { view: BoardView }) {
             onChangeLag={(taskId, lagDays) => updateLag({ taskId, lagDays })}
             onChangeAssignees={(taskId, userIds) => setAssignees({ taskId, userIds })}
             onCreateTask={addTask}
+            onCreateTaskInline={createTaskInline}
             onRenameTask={(taskId, title) => updateTitle({ taskId, title })}
             onChangeValue={(taskId, fieldDefinitionId, value) => setTaskValue({ taskId, fieldDefinitionId, value })}
             onAttachField={attachField}
