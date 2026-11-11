@@ -15,7 +15,7 @@ env:
 
 jobs:
   make-mac:
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,3 +60,4 @@ jobs:
             dist/**/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
