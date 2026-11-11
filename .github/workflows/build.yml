@@ -26,8 +26,10 @@ jobs:
       # One platform failing (or never getting a runner — GitHub's macOS
       # pool has had capacity outages) must not cancel the other.
       fail-fast: false
+      # Use macos-13 (Intel) which has high availability and never queues/cancels,
+      # or macos-latest if macos-13 is not preferred.
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [windows-latest, macos-13]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
