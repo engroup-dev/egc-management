@@ -1,7 +1,7 @@
 {
   "name": "egc-management",
   "productName": "egc-management",
-  "version": "1.1.31",
+  "version": "1.1.32",
   "description": "Finance and management Application for EGC",
   "repository": {
     "type": "git",
