@@ -1,0 +1,105 @@
+name: Build and Publish (Windows + macOS)
+
+on:
+  push:
+    tags:
+      - "v*"
+  # Manual run: rebuild and (re)publish an existing tag with the CURRENT
+  # workflow — e.g. when a platform's runner was unavailable for the tag
+  # push. Re-running the original run would reuse the workflow as it was
+  # at that tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and publish, e.g. v1.1.25"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  make:
+    strategy:
+      # One platform failing (or never getting a runner — GitHub's macOS
+      # pool has had capacity outages) must not cancel the other.
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build distributables
+        run: npm run make
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
+      - name: List built files
+        shell: bash
+        run: find out/make -type f
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: out-${{ matrix.os }}
+          path: out/make/**
+
+  publish:
+    needs: make
+    # Publish whatever platforms built. Windows auto-update must not wait
+    # on a macOS runner; a missing DMG can be added by a manual run later.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+
+      - name: List downloaded files
+        run: |
+          find dist -type f
+          if [ -z "$(find dist -type f 2>/dev/null)" ]; then
+            echo "No platform built successfully — nothing to publish." >&2
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          draft: false
+          files: |
+            dist/**/*.exe
+            dist/**/*.dmg
+            dist/**/*.zip
+            dist/**/*.nupkg
+            dist/**/RELEASES
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Reminder
+        run: |
+          echo "### ⚠️ Release is a DRAFT" >> $GITHUB_STEP_SUMMARY
+          echo "Auto-update will NOT work until you publish it." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "https://github.com/${{ github.repository }}/releases" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.make.result }}" != "success" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ⚠️ Not every platform built" >> $GITHUB_STEP_SUMMARY
+            echo "Re-run with: Actions → Build and Publish → Run workflow → tag ${{ env.RELEASE_TAG }}" >> $GITHUB_STEP_SUMMARY
+          fi
