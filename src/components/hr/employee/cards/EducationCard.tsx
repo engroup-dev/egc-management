@@ -6,7 +6,7 @@ type CertificationRow = {
   id?: string;
   certification: string;
 };
-1;
+
 export type EducationValues = {
   employee_certifications: CertificationRow[];
 };
