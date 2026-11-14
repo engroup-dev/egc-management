@@ -1,4 +1,4 @@
-import { FileSignature, PackageOpen, Paperclip, Settings } from "lucide-react";
+import { Boxes, FileSignature, PackageOpen, Paperclip, Settings } from "lucide-react";
 import type { NavItem } from "./types";
 
 // One permission per destination (issue 19 gap 4 pattern), each with
@@ -35,6 +35,12 @@ export const OPERATIONS_ITEMS: NavItem[] = [
     icon: FileSignature,
     path: "/operations/agreements",
     description: "اتفاقيات المقاولين ودفعاتها والغرامات",
+  },
+  {
+    label: "المخزون والمواد",
+    icon: Boxes,
+    path: "/operations/inventory",
+    description: "إدارة ومتابعة مخزون المشاريع وصرف المواد للمقاولين",
   },
   {
     label: "الإعدادات",
