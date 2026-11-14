@@ -1,10 +1,10 @@
 import type { Tables } from "../lib/supabase";
 
-// The inventory tables aren't in lib/supabase.ts until the types are
-// regenerated after 20261108000000_project_inventory.sql is applied, so
-// the rows are typed by hand here. The joined shop/contractor/project
-// shapes are picked from the generated types, so a wrong column name in
-// them is a compile error rather than a 400 at runtime.
+// Row shapes for the inventory page, including their joins. item_type is
+// narrowed to its check-constraint values (the generated type is plain
+// string). The joined shop/contractor/project shapes are picked from the
+// generated types, so a wrong column name in them is a compile error rather
+// than a 400 at runtime.
 
 export type InventoryItemType = "catalog" | "custom";
 

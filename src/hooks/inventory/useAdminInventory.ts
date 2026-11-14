@@ -8,10 +8,6 @@ import type {
   ProjectMaterialIssue,
 } from "../../types/inventory";
 
-// TODO(types): drop the `as any` casts once lib/supabase.ts is regenerated
-// with the inventory tables. The joined columns are already checked by the
-// Pick<Tables<...>> types in types/inventory.ts.
-
 export const INVENTORY_KEYS = {
   all: ["inventory"] as const,
   allSummaries: ["inventory", "summaries"] as const,
@@ -62,7 +58,7 @@ export function useProjectsInventorySummary() {
       const [projectsRes, itemsRes] = await Promise.all([
         supabase.from("projects").select("id, name").order("name"),
         supabase
-          .from("project_inventory_items" as any)
+          .from("project_inventory_items")
           .select("project_id, current_quantity, low_stock_threshold"),
       ]);
 
@@ -70,7 +66,7 @@ export function useProjectsInventorySummary() {
       if (itemsRes.error) throw itemsRes.error;
 
       const byProject = new Map<string, { total: number; low: number; out: number }>();
-      for (const item of (itemsRes.data as any[]) ?? []) {
+      for (const item of itemsRes.data ?? []) {
         const s = byProject.get(item.project_id) ?? { total: 0, low: 0, out: 0 };
         const current = Number(item.current_quantity);
         s.total += 1;
@@ -100,13 +96,13 @@ export function useProjectInventoryItems(projectId: string | undefined, enabled 
     enabled: !!projectId && enabled,
     queryFn: async (): Promise<ProjectInventoryItem[]> => {
       const { data, error } = await supabase
-        .from("project_inventory_items" as any)
+        .from("project_inventory_items")
         .select(ITEM_COLUMNS)
         .eq("project_id", projectId!)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      return (data as any) ?? [];
+      return (data ?? []) as ProjectInventoryItem[];
     },
   });
 }
@@ -118,7 +114,7 @@ export function useProjectMaterialIssues(projectId: string | undefined, enabled 
     enabled: !!projectId && enabled,
     queryFn: async (): Promise<ProjectMaterialIssue[]> => {
       const { data, error } = await supabase
-        .from("project_material_issues" as any)
+        .from("project_material_issues")
         .select(`
           id,
           project_id,
@@ -151,7 +147,7 @@ export function useProjectMaterialIssues(projectId: string | undefined, enabled 
         .order("issue_date", { ascending: false });
 
       if (error) throw error;
-      return (data as any) ?? [];
+      return (data ?? []) as ProjectMaterialIssue[];
     },
   });
 }
@@ -162,14 +158,14 @@ export function useDefaultProjectMaterials() {
     queryKey: INVENTORY_KEYS.defaultMaterials,
     queryFn: async (): Promise<DefaultProjectMaterial[]> => {
       const { data, error } = await supabase
-        .from("default_project_materials" as any)
+        .from("default_project_materials")
         .select("*")
         .eq("is_active", true)
         .order("trade")
         .order("name");
 
       if (error) throw error;
-      return (data as any) ?? [];
+      return data ?? [];
     },
   });
 }
@@ -190,7 +186,7 @@ export function useApplyDefaultMaterialsToProject() {
       projectId: string;
       squareMeters: number;
     }): Promise<ApplyDefaultsResult> => {
-      const { data, error } = await (supabase.rpc as any)("inventory_apply_defaults", {
+      const { data, error } = await supabase.rpc("inventory_apply_defaults", {
         p_project_id: projectId,
         p_sqm: squareMeters,
       });
