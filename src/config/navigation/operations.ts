@@ -37,6 +37,9 @@ export const OPERATIONS_ITEMS: NavItem[] = [
     description: "اتفاقيات المقاولين ودفعاتها والغرامات",
   },
   {
+    // Same as maps/boq: a project picker. view_inventory / manage_inventory
+    // are project-scoped and checked on the page once a project is picked
+    // (and enforced by RLS on the inventory tables).
     label: "المخزون والمواد",
     icon: Boxes,
     path: "/operations/inventory",
