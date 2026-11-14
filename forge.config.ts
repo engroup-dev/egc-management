@@ -10,6 +10,10 @@ import { FuseV1Options, FuseVersion } from "@electron/fuses";
 import { MakerDMG } from "@electron-forge/maker-dmg";
 import path from "node:path";
 
+if (!process.env.CHOKIDAR_USEPOLLING) {
+  process.env.CHOKIDAR_USEPOLLING = "true";
+}
+
 const isMac = process.platform === "darwin";
 const isWindows = process.platform === "win32";
 const isLinux = process.platform === "linux";

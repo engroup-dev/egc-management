@@ -1,4 +1,4 @@
-import { FileSignature, PackageOpen, Paperclip, Settings } from "lucide-react";
+import { Boxes, FileSignature, PackageOpen, Paperclip, Settings } from "lucide-react";
 import type { NavItem } from "./types";
 
 // One permission per destination (issue 19 gap 4 pattern), each with
@@ -35,6 +35,15 @@ export const OPERATIONS_ITEMS: NavItem[] = [
     icon: FileSignature,
     path: "/operations/agreements",
     description: "اتفاقيات المقاولين ودفعاتها والغرامات",
+  },
+  {
+    // Same as maps/boq: a project picker. view_inventory / manage_inventory
+    // are project-scoped and checked on the page once a project is picked
+    // (and enforced by RLS on the inventory tables).
+    label: "المخزون والمواد",
+    icon: Boxes,
+    path: "/operations/inventory",
+    description: "إدارة ومتابعة مخزون المشاريع وصرف المواد للمقاولين",
   },
   {
     label: "الإعدادات",
