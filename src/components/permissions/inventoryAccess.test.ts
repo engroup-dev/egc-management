@@ -4,6 +4,7 @@ import {
   INVENTORY_LEVELS,
   INVENTORY_LEVEL_LABELS,
   grantsForLevel,
+  levelFromRows,
   inventoryPermIds,
   isInventoryCustomized,
   levelFromEffective,
@@ -16,6 +17,23 @@ test("levelFromEffective", () => {
   assert.equal(levelFromEffective(true, true), "manage");
   // manage implies view, wherever it is checked
   assert.equal(levelFromEffective(false, true), "manage");
+});
+
+test("levelFromRows reads the resolver's two rows", () => {
+  const rows = [
+    { permission_name: "view_projects", allowed: true },
+    { permission_name: "view_inventory", allowed: true },
+    { permission_name: "manage_inventory", allowed: false },
+  ];
+  assert.equal(levelFromRows(rows), "view");
+});
+
+test("levelFromRows throws when the resolver leaves the rows out", () => {
+  // effective_permissions returns no rows at all for a caller who may not
+  // read someone else's permissions; that must surface as an error, not
+  // as "no access".
+  assert.throws(() => levelFromRows([]));
+  assert.throws(() => levelFromRows([{ permission_name: "view_inventory", allowed: true }]));
 });
 
 test("grantsForLevel writes both rows for every level", () => {

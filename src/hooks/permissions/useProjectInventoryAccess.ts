@@ -1,9 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { permissionsDb } from "../../lib/permissionsDb";
 import {
-  INVENTORY_PERMISSION_NAMES,
   grantsForLevel,
-  levelFromEffective,
+  levelFromRows,
   type InventoryLevel,
   type InventoryPermIds,
 } from "../../components/permissions/inventoryAccess";
@@ -49,12 +48,7 @@ export function useProjectInventoryAccess(
         p_project_id: projectId as string,
       });
       if (error) throw error;
-      const allowed = (name: string) =>
-        (data ?? []).some((r) => r.permission_name === name && r.allowed);
-      return levelFromEffective(
-        allowed(INVENTORY_PERMISSION_NAMES.view),
-        allowed(INVENTORY_PERMISSION_NAMES.manage),
-      );
+      return levelFromRows(data ?? []);
     },
   });
 
@@ -107,14 +101,17 @@ export function useSetProjectInventoryAccess() {
         .upsert(rows as never, { onConflict: "project_id,user_id,permission_id" });
       if (error) throw error;
     },
-    onSuccess: (_data, { userId, projectId }) => {
-      queryClient.invalidateQueries({ queryKey: ["effective-permissions"] });
-      queryClient.invalidateQueries({ queryKey: ["my-effective-permissions"] });
-      queryClient.invalidateQueries({ queryKey: ["user-tm-grants", userId] });
-      queryClient.invalidateQueries({ queryKey: ["matrix-tm-grants"] });
-      queryClient.invalidateQueries({
-        queryKey: ["team-member-permission-grants", projectId, userId],
-      });
-    },
+    // Returned, so the mutation stays pending — and the control disabled —
+    // until the new level and the مخصص / حسب الدور badge have refetched.
+    onSuccess: (_data, { userId, projectId }) =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["effective-permissions"] }),
+        queryClient.invalidateQueries({ queryKey: ["my-effective-permissions"] }),
+        queryClient.invalidateQueries({ queryKey: ["user-tm-grants", userId] }),
+        queryClient.invalidateQueries({ queryKey: ["matrix-tm-grants"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["team-member-permission-grants", projectId, userId],
+        }),
+      ]),
   });
 }

@@ -717,28 +717,33 @@ export default function MobileBuilderPermissionsTab({
 
       if (rowsToCopy.length === 0 && inventoryRemoveIds.length === 0) return;
 
-      if (inventoryRemoveIds.length > 0) {
-        const { error: removeError } = await permissionsDb
-          .from("team_member_permission_grants")
-          .delete()
-          .eq("project_id", activeProjectId)
-          .eq("user_id", activeUser.id)
-          .in("permission_id", inventoryRemoveIds);
-        if (removeError) throw removeError;
+      // Upsert before delete: if the upsert fails nothing has changed, and
+      // if the delete fails the rows left are the target's own earlier
+      // ones, so a half-done copy never widens access.
+      try {
+        if (rowsToCopy.length > 0) {
+          const { error } = await permissionsDb
+            .from("team_member_permission_grants")
+            .upsert(rowsToCopy as never, { onConflict: "project_id,user_id,permission_id" });
+          if (error) throw error;
+        }
+
+        if (inventoryRemoveIds.length > 0) {
+          const { error: removeError } = await permissionsDb
+            .from("team_member_permission_grants")
+            .delete()
+            .eq("project_id", activeProjectId)
+            .eq("user_id", activeUser.id)
+            .in("permission_id", inventoryRemoveIds);
+          if (removeError) throw removeError;
+        }
+      } finally {
+        // Refresh even after a failure, so the screen shows what was saved.
+        await refetchTeamGrants();
+        queryClient.invalidateQueries({ queryKey: ["matrix-tm-grants"] });
+        queryClient.invalidateQueries({ queryKey: ["effective-permissions"] });
       }
 
-      const { error } =
-        rowsToCopy.length > 0
-          ? await permissionsDb
-              .from("team_member_permission_grants")
-              .upsert(rowsToCopy as never, { onConflict: "project_id,user_id,permission_id" })
-          : { error: null };
-
-      if (error) throw error;
-
-      await refetchTeamGrants();
-      queryClient.invalidateQueries({ queryKey: ["matrix-tm-grants"] });
-      queryClient.invalidateQueries({ queryKey: ["effective-permissions"] });
       setIsCopyDropdownOpen(false);
 
       showToast(

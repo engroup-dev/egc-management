@@ -45,6 +45,24 @@ export function levelFromEffective(view: boolean, manage: boolean): InventoryLev
   return view ? "view" : "none";
 }
 
+/**
+ * The level from effective_permissions() rows. Throws if either
+ * inventory row is missing: the resolver returns NO rows at all to a
+ * caller who may not read someone else's permissions, and that must show
+ * as an error, never as "no access".
+ */
+export function levelFromRows(
+  rows: { permission_name: string; allowed: boolean }[],
+): InventoryLevel {
+  const find = (name: string) => rows.find((r) => r.permission_name === name);
+  const view = find(INVENTORY_PERMISSION_NAMES.view);
+  const manage = find(INVENTORY_PERMISSION_NAMES.manage);
+  if (!view || !manage) {
+    throw new Error("inventory permissions missing from the resolver result");
+  }
+  return levelFromEffective(view.allowed, manage.allowed);
+}
+
 /** The two rows to write for a level. */
 export function grantsForLevel(level: InventoryLevel): { view: boolean; manage: boolean } {
   return { view: level !== "none", manage: level === "manage" };
