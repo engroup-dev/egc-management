@@ -236,6 +236,8 @@ const EXPLICIT_MODULE_BY_PERMISSION: Record<string, ModuleId> = {
   create_type_from_template: "operations",
   view_operations_maps: "operations",
   view_operations_settings: "operations",
+  view_inventory: "operations",
+  manage_inventory: "operations",
 
   // Finance
   view_finance_section: "finance",
@@ -409,6 +411,8 @@ const SHORT_PERMISSION_LABELS: Record<string, string> = {
   view_operations_maps: "الخرائط والمخططات",
   view_operations_settings: "إعدادات التشغيل",
   view_operations_logs: "سجلات قسم التشغيل",
+  view_inventory: "مخزون المشروع (عرض)",
+  manage_inventory: "إدارة المخزون (استلام وصرف)",
 
   // Supply Chain
   view_contractors: "دليل المقاولين",
