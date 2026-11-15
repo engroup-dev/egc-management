@@ -32,6 +32,8 @@ import { useAddTeamMember, useRemoveTeamMember, useProjectRoles } from "../../ho
 import { usePermissionCatalog } from "../../hooks/permissions/usePermissionCatalog";
 import { permissionsDb } from "../../lib/permissionsDb";
 import type { GrantScope } from "../../types/permissions.types";
+import InventoryAccessSection from "./InventoryAccessSection";
+import { inventoryPermIds, isInventoryCustomized, planInventoryCopy } from "./inventoryAccess";
 
 interface Props {
   selectedUser: PermissionUserSummary | null;
@@ -277,6 +279,9 @@ export default function MobileBuilderPermissionsTab({
     }
     return map;
   }, [catalog]);
+
+  // null on a database without the inventory permissions: the section is hidden.
+  const inventoryIds = useMemo(() => inventoryPermIds(permMap), [permMap]);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -689,11 +694,45 @@ export default function MobileBuilderPermissionsTab({
         })
         .filter((r): r is NonNullable<typeof r> => Boolean(r));
 
-      if (rowsToCopy.length === 0) return;
+      // Inventory copies exactly: the source's own rows, and none where it
+      // has none, so a source that follows the role copies as "follows the role".
+      const inventoryRemoveIds: string[] = [];
+      if (inventoryIds) {
+        const plan = planInventoryCopy({
+          view: teamGrantMap.get(`${sourceProjectId}:${inventoryIds.view}`),
+          manage: teamGrantMap.get(`${sourceProjectId}:${inventoryIds.manage}`),
+        });
+        for (const { key, allowed } of plan.upsert) {
+          rowsToCopy.push({
+            project_id: activeProjectId,
+            user_id: activeUser.id,
+            permission_id: inventoryIds[key],
+            allowed,
+            granted_by: currentAuthUser?.id ?? null,
+            granted_at: new Date().toISOString(),
+          });
+        }
+        for (const key of plan.remove) inventoryRemoveIds.push(inventoryIds[key]);
+      }
 
-      const { error } = await permissionsDb
-        .from("team_member_permission_grants")
-        .upsert(rowsToCopy as never, { onConflict: "project_id,user_id,permission_id" });
+      if (rowsToCopy.length === 0 && inventoryRemoveIds.length === 0) return;
+
+      if (inventoryRemoveIds.length > 0) {
+        const { error: removeError } = await permissionsDb
+          .from("team_member_permission_grants")
+          .delete()
+          .eq("project_id", activeProjectId)
+          .eq("user_id", activeUser.id)
+          .in("permission_id", inventoryRemoveIds);
+        if (removeError) throw removeError;
+      }
+
+      const { error } =
+        rowsToCopy.length > 0
+          ? await permissionsDb
+              .from("team_member_permission_grants")
+              .upsert(rowsToCopy as never, { onConflict: "project_id,user_id,permission_id" })
+          : { error: null };
 
       if (error) throw error;
 
@@ -1307,6 +1346,23 @@ export default function MobileBuilderPermissionsTab({
                   })}
                 </div>
               </div>
+
+              {/* =====================================================================
+                  PERMISSIONS SECTION 4: المخزون والمواد (three levels, not a switch)
+                 ===================================================================== */}
+              {inventoryIds && activeUser && activeProjectId && (
+                <InventoryAccessSection
+                  key={`${activeUser.id}:${activeProjectId}`}
+                  userId={activeUser.id}
+                  projectId={activeProjectId}
+                  ids={inventoryIds}
+                  customized={isInventoryCustomized(teamGrantMap, activeProjectId, inventoryIds)}
+                  grantedBy={currentAuthUser?.id ?? null}
+                  onToast={(message) =>
+                    showToast(message, activeProjectObj?.project.projectName || activeProjectId)
+                  }
+                />
+              )}
             </>
           ) : (
             /* Empty State: No active project */
