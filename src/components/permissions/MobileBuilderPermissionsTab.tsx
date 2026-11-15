@@ -721,21 +721,37 @@ export default function MobileBuilderPermissionsTab({
     );
     if (!confirmed) return;
 
-    try {
-      await removeTeamMember.mutateAsync({
-        projectId: activeProjectId,
-        userId: activeUser.id,
-      });
+    // Every assignment this user holds on the project, not just the one
+    // whose role the header shows: someone with two roles has two rows,
+    // and unassigning the project must remove both.
+    const assignments = activeProjectObj.project.members.filter(
+      (m) => m.userId === activeUser.id,
+    );
+    if (assignments.length === 0) return;
 
-      // Clean up grants
-      await permissionsDb
+    try {
+      // One at a time, so a failure stops here and the grants below stay.
+      for (const m of assignments) {
+        await removeTeamMember.mutateAsync({
+          assignmentId: m.assignmentId,
+          personType: m.personType,
+          projectId: activeProjectId,
+          personId: m.personId,
+          projectRoleId: m.projectRoleId,
+        });
+      }
+
+      // Clean up grants, only once the user is off the project entirely.
+      const { error } = await permissionsDb
         .from("team_member_permission_grants")
         .delete()
         .eq("project_id", activeProjectId)
         .eq("user_id", activeUser.id);
+      if (error) throw error;
 
       await refetchTeamGrants();
-      queryClient.invalidateQueries({ queryKey: ["all-project-teams"] });
+      queryClient.invalidateQueries({ queryKey: ["matrix-tm-grants"] });
+      queryClient.invalidateQueries({ queryKey: ["effective-permissions"] });
 
       showToast("تم إلغاء إسناد المشروع بنجاح", activeProjectObj.project.projectName);
     } catch (err) {
