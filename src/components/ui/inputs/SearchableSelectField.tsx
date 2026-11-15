@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Search, Check } from "lucide-react";
+import { Search, Check, ChevronDown } from "lucide-react";
 
 type Option = { value: string; label: string };
 
@@ -135,9 +135,14 @@ export const SearchableSelectField: React.FC<SearchableSelectFieldProps> = (
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
-          className="w-full border rounded px-3 py-2 text-right bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+          className="w-full flex items-center justify-between gap-2 border rounded px-3 py-2 text-right bg-white focus:outline-none focus:ring-2 focus:ring-primary"
         >
-          {triggerLabel}
+          <span className="truncate">{triggerLabel}</span>
+          <ChevronDown
+            className={`w-4 h-4 shrink-0 text-gray-500 transition-transform ${
+              isOpen ? "rotate-180" : ""
+            }`}
+          />
         </button>
 
         {isOpen && (

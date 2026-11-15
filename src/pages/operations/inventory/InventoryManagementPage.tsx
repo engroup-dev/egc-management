@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   Calculator,
   CheckCircle2,
-  ChevronDown,
   Layers,
   Lock,
   Package,
@@ -20,6 +19,7 @@ import {
   useProjectsInventorySummary,
 } from "../../../hooks/inventory/useAdminInventory";
 import { useCan } from "../../../hooks/permissions/useCan";
+import { SearchableSelectField } from "../../../components/ui/inputs/SearchableSelectField";
 import {
   inventoryErrorMessage,
   inventoryItemLabel,
@@ -107,6 +107,17 @@ export default function InventoryManagementPage() {
   const totalOutOfStock = summaries.reduce((acc, s) => acc + s.outOfStockItems, 0);
 
   const activeProjectSummary = summaries.find((s) => s.projectId === selectedProjectId);
+
+  const projectOptions = useMemo(
+    () =>
+      summaries.map((s) => ({
+        value: s.projectId,
+        label:
+          s.projectName +
+          (s.totalItems > 0 ? ` (${s.totalItems} مادة - ${s.lowStockItems} منخفض)` : ""),
+      })),
+    [summaries],
+  );
 
   const filteredProjectItems = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
@@ -250,21 +261,19 @@ export default function InventoryManagementPage() {
       {/* Project picker, shared by the project and ledger tabs */}
       <div className="bg-white p-4 rounded-xl border border-gray-200 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <label className="text-sm font-medium text-gray-700 whitespace-nowrap">اختر المشروع:</label>
-          <div className="relative min-w-[260px]">
-            <select
+          <label htmlFor="inventory-project" className="text-sm font-medium text-gray-700 whitespace-nowrap">
+            اختر المشروع:
+          </label>
+          <div className="min-w-[260px]">
+            <SearchableSelectField
+              id="inventory-project"
+              hideLabel
+              placeholder="اختر المشروع..."
+              loading={summariesQuery.isPending}
               value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
-              className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5 pl-8 focus:ring-blue-500 focus:border-blue-500"
-            >
-              {summaries.map((s) => (
-                <option key={s.projectId} value={s.projectId}>
-                  {s.projectName}
-                  {s.totalItems > 0 ? ` (${s.totalItems} مادة - ${s.lowStockItems} منخفض)` : ""}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="w-4 h-4 text-gray-500 absolute left-2.5 top-3 pointer-events-none" />
+              onChange={setSelectedProjectId}
+              options={projectOptions}
+            />
           </div>
         </div>
 
