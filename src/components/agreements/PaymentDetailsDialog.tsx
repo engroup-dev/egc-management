@@ -4,9 +4,10 @@ import Badge from "../ui/Badge";
 import Button from "../ui/Button";
 import LoadingSpinner from "../ui/LoadingSpinner";
 import ContractPaymentActionsCell from "../tables/actions/payments/ContractPaymentActionsCell";
-import { useAgreementDetail } from "../../hooks/agreements/useAgreements";
+import { useAgreementDetail, usePaymentHistory } from "../../hooks/agreements/useAgreements";
 import { useAgreementPdf } from "../../hooks/agreements/useAgreementPdf";
 import type { ContractPayment } from "../../types/contracts.type";
+import type { PaymentVersion } from "../../types/agreements.types";
 import { currentItems, lineText, PAYMENT_STATUS } from "../../utils/agreements/versions";
 import { formatCurrency, formatDate } from "../../utils/helpper";
 import { translatePaymentMethod } from "../../utils/translations";
@@ -32,6 +33,8 @@ export default function PaymentDetailsDialog({ payment, onClose, onOpenAgreement
   const agreementId = payment?.agreement_id ?? null;
   const { data: detail, isLoading } = useAgreementDetail(agreementId);
   const pdf = useAgreementPdf();
+  const editCount = payment?.edit_count ?? 0;
+  const history = usePaymentHistory(payment?.id ?? null, editCount > 0);
 
   if (!payment) return null;
 
@@ -55,8 +58,36 @@ export default function PaymentDetailsDialog({ payment, onClose, onOpenAgreement
               {contractorName} · {payment.project?.name ?? "—"}
             </p>
           </div>
-          <Badge label={status.label} variant={status.variant} />
+          <div className="flex flex-col items-end gap-1">
+            <Badge label={status.label} variant={status.variant} />
+            {editCount > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200">
+                معدّلة · {editCount}
+              </span>
+            )}
+          </div>
         </div>
+
+        {editCount > 0 && (
+          <Section title={`سجل التعديلات (${editCount})`}>
+            {history.isLoading ? (
+              <div className="flex justify-center py-4">
+                <LoadingSpinner />
+              </div>
+            ) : history.isError || !history.data ? (
+              <p className="text-sm text-red-700">تعذر تحميل سجل التعديلات</p>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500">
+                  عُدّلت هذه الدفعة بعد إرسالها. القيم أعلاه وأدناه هي الحالية؛ النسخ السابقة:
+                </p>
+                {[...history.data.versions].reverse().map((v) => (
+                  <VersionRow key={v.version_no} v={v} current={amount} />
+                ))}
+              </div>
+            )}
+          </Section>
+        )}
 
         <Section title="سبب الدفعة">
           {payment.payments_reason ? (
@@ -207,6 +238,41 @@ export default function PaymentDetailsDialog({ payment, onClose, onOpenAgreement
         </div>
       </div>
     </Dialog>
+  );
+}
+
+function VersionRow({ v, current }: { v: PaymentVersion; current: number }) {
+  const diff = current - v.amount;
+  return (
+    <div className="rounded-lg border border-amber-100 bg-amber-50/40 p-3 text-sm space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="font-semibold text-gray-800">
+          {v.version_no === 1 ? "النسخة الأصلية" : `النسخة ${v.version_no}`}
+        </span>
+        <span className="text-xs text-gray-500">
+          كتبها {v.created_by_name ?? "—"} · {formatDate(v.created_at)}
+        </span>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <Field label="المبلغ" value={formatCurrency(v.amount)} />
+        <Field label="الغرامة" value={formatCurrency(v.penalty_amount)} />
+        <Field label="الصافي" value={formatCurrency(v.net)} />
+      </div>
+      {diff !== 0 && (
+        <p className={`text-xs font-medium ${diff > 0 ? "text-red-700" : "text-green-700"}`}>
+          المبلغ الحالي {diff > 0 ? "أعلى" : "أقل"} بـ {formatCurrency(Math.abs(diff))} من هذه النسخة
+        </p>
+      )}
+      {v.payments_reason && <p className="text-gray-700 whitespace-pre-wrap">{v.payments_reason}</p>}
+      <p className="text-xs text-gray-600">
+        {translatePaymentMethod(v.method)}
+        {v.method === "bank" &&
+          ` · ${[v.bank_name, v.bank_number, v.bank_holder_name].filter(Boolean).join(" · ")}`}
+      </p>
+      <p className="text-xs text-amber-800 border-t border-amber-100 pt-1.5">
+        عدّلها {v.edited_by_name ?? "—"} · {formatDate(v.edited_at)} — السبب: {v.change_note}
+      </p>
+    </div>
   );
 }
 
