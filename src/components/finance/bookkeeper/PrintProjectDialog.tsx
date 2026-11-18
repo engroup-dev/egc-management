@@ -33,7 +33,20 @@ const CHOICES: { value: PrintChoice; label: string; hint: string }[] = [
   },
 ];
 
-const SCOPED_PATH = "/api/v1/egc/management/invoice/scoped/pdf";
+// The full print comes in two versions: the original, or the same invoice with
+// one extra line (company percentage) in the top summary.
+type PrintVersion = "original" | "percentage";
+
+const VERSIONS: { value: PrintVersion; label: string; hint: string }[] = [
+  { value: "original", label: "الأصلية", hint: "الفاتورة كما هي بدون أي تغيير" },
+  {
+    value: "percentage",
+    label: "مع النسبة",
+    hint: "نفس الفاتورة مع إضافة نسبة الشركة في الملخص العلوي",
+  },
+];
+
+const SCOPED_PATH ="/api/v1/egc/management/invoice/scoped/pdf";
 const SUMMED_PATH = "/api/v1/egc/management/invoice/summed/pdf";
 
 interface PrintProjectDialogProps {
@@ -45,6 +58,7 @@ export default function PrintProjectDialog({
 }: PrintProjectDialogProps) {
   const [open, setOpen] = useState(false);
   const [choice, setChoice] = useState<PrintChoice>("all");
+  const [version, setVersion] = useState<PrintVersion>("original");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { can: canAdminPrint, loading: permissionLoading } = useCan(
@@ -89,7 +103,13 @@ export default function PrintProjectDialog({
           body: JSON.stringify(
             admin
               ? buildSummedInvoicePayload(project)
-              : { ...buildInvoicePayload(project), scope: choice },
+              : {
+                  ...buildInvoicePayload(project),
+                  scope: choice,
+                  // only the full print has the top summary that gets the line
+                  show_percentage:
+                    choice === "all" && version === "percentage",
+                },
           ),
         },
       );
@@ -166,6 +186,35 @@ export default function PrintProjectDialog({
               );
             })}
           </div>
+
+          {choice === "all" && (
+            <div className="flex flex-col gap-1 border-t border-gray-100 pt-3">
+              <p className="text-sm font-semibold">نسخة الطباعة</p>
+              {VERSIONS.map((v) => (
+                <label
+                  key={v.value}
+                  className="flex cursor-pointer items-start gap-3 rounded-lg px-2 py-2 hover:bg-gray-50"
+                >
+                  <input
+                    type="radio"
+                    name="print-version"
+                    value={v.value}
+                    checked={version === v.value}
+                    onChange={() => setVersion(v.value)}
+                    className="mt-1 h-4 w-4 accent-primary"
+                  />
+                  <span>
+                    <span className="block text-sm font-semibold">
+                      {v.label}
+                    </span>
+                    <span className="block text-xs text-gray-500">
+                      {v.hint}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
 
           {error && <p className="text-sm text-red-600">{error}</p>}
 
