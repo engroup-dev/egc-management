@@ -9,7 +9,9 @@ const BulkExpensesPage = () => {
   }
   return (
     <div>
-      <ProjectExpenseBulkForm projectId={id} />
+      {/* key: a fresh form per project, so rows never keep the previous
+          project's id (see ProjectBookDetailsPage). */}
+      <ProjectExpenseBulkForm key={id} projectId={id} />
     </div>
   );
 };

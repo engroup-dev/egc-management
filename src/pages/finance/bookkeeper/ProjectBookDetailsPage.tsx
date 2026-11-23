@@ -10,7 +10,11 @@ const ProjectBookDetailsPage = () => {
 
   return (
     <div>
-      <ProjectBookDetails id={id} />
+      {/* key: switching projects from the sidebar keeps this route mounted,
+          and the expense forms set their project once, on mount. Without a
+          fresh mount per project they kept the previous project and saved
+          expenses into it. */}
+      <ProjectBookDetails key={id} id={id} />
     </div>
   );
 };
