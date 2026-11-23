@@ -26,6 +26,7 @@ import {
   ProjectMaps,
 } from "../../types/global.type";
 import { normalizeError } from "../useMaps";
+import { bookTargetProject } from "./bookTarget";
 
 // A project_expenses row with the vendor / contractor names it is read with.
 type ExpenseWithJoins = ProjectExpenses & {
@@ -109,6 +110,24 @@ async function fetchBookProject(
   return projectWithNames;
 }
 
+// A project's expense and invoice counters, read fresh at save time.
+// The page's copy comes from a cache that can be minutes old (or from
+// disk at boot), and numbering from it repeats serial numbers.
+async function fetchProjectCounters(
+  projectId: string,
+): Promise<{ expense_counter: number; invoice_counter: number }> {
+  const { data, error } = await supabase
+    .from("projects")
+    .select("expense_counter, invoice_counter")
+    .eq("id", projectId)
+    .single();
+  if (error) throw error;
+  return {
+    expense_counter: Number(data.expense_counter ?? 0),
+    invoice_counter: Number(data.invoice_counter ?? 0),
+  };
+}
+
 // Exported so the background prefetcher can warm a project's book.
 export const bookProjectQueryOptions = (projectId: string) =>
   queryOptions({
@@ -142,7 +161,12 @@ export function useBookProject(projectId: string) {
 
       if (!user?.id) throw new Error("User not authenticated");
 
-      if (!expenseData.project_id) throw new Error("Project is required");
+      // Refuse a form left over from another project (see bookTarget.ts),
+      // and number the expense from the target project's own counters as
+      // they are now, not from the page's cached copy.
+      const counters = await fetchProjectCounters(
+        bookTargetProject(projectId, expenseData.project_id),
+      );
       if (!expenseData.total_amount || expenseData.total_amount <= 0)
         throw new Error("Total amount must be > 0");
       if (!expenseData.currency) throw new Error("Currency is required");
@@ -189,7 +213,7 @@ export function useBookProject(projectId: string) {
           expense_type: expenseData.type,
           status,
           amount_paid: paidAmount,
-          serial_number: project?.expense_counter || 0,
+          serial_number: counters.expense_counter,
           contractor_id: expenseData.contractor_id ?? undefined,
           vendor_id: expenseData.vendor_id ?? undefined,
           currency: expenseData.currency,
@@ -231,7 +255,7 @@ export function useBookProject(projectId: string) {
         const paymentMethod = expenseData.payment_method; // safe now
 
         const serial_number = Number(
-          `${project?.expense_counter}.${expense.payment_counter}`,
+          `${counters.expense_counter}.${expense.payment_counter}`,
         );
 
         // fetch account
@@ -260,7 +284,7 @@ export function useBookProject(projectId: string) {
             serial_number,
             expense_no: expense.serial_number,
             payment_no: expense.payment_counter,
-            invoice_no: project?.invoice_counter,
+            invoice_no: counters.invoice_counter,
           })
           .select()
           .single();
@@ -313,8 +337,8 @@ export function useBookProject(projectId: string) {
       await supabase
         .from("projects")
         .update({
-          expense_counter: (project?.expense_counter || 0) + 1,
-          invoice_counter: (project?.invoice_counter || 0) + 1,
+          expense_counter: counters.expense_counter + 1,
+          invoice_counter: counters.invoice_counter + 1,
         })
         .eq("id", expenseData.project_id);
 
@@ -356,7 +380,12 @@ export function useBookProject(projectId: string) {
 
       if (!user?.id) throw new Error("User not authenticated");
 
-      if (!expenseData.project_id) throw new Error("Project is required");
+      // Refuse a form left over from another project (see bookTarget.ts),
+      // and number the expense from the target project's own counters as
+      // they are now, not from the page's cached copy.
+      const counters = await fetchProjectCounters(
+        bookTargetProject(projectId, expenseData.project_id),
+      );
       if (!expenseData.total_amount || expenseData.total_amount <= 0)
         throw new Error("Total amount must be > 0");
       if (!expenseData.currency) throw new Error("Currency is required");
@@ -410,7 +439,7 @@ export function useBookProject(projectId: string) {
           expense_type: expenseData.type,
           status,
           amount_paid: paidAmount,
-          serial_number: project?.expense_counter || 0,
+          serial_number: counters.expense_counter,
           contractor_id: expenseData.contractor_id ?? undefined,
           vendor_id: expenseData.vendor_id ?? undefined,
           currency: expenseData.currency,
@@ -452,7 +481,7 @@ export function useBookProject(projectId: string) {
         const paymentMethod = expenseData.payment_method; // safe now
 
         const serial_number = Number(
-          `${project?.expense_counter}.${expense.payment_counter}`,
+          `${counters.expense_counter}.${expense.payment_counter}`,
         );
 
         // fetch account
@@ -481,7 +510,7 @@ export function useBookProject(projectId: string) {
             serial_number,
             expense_no: expense.serial_number,
             payment_no: expense.payment_counter,
-            invoice_no: project?.invoice_counter,
+            invoice_no: counters.invoice_counter,
           })
           .select()
           .single();
@@ -534,8 +563,8 @@ export function useBookProject(projectId: string) {
       await supabase
         .from("projects")
         .update({
-          expense_counter: (project?.expense_counter || 0) + 1,
-          invoice_counter: (project?.invoice_counter || 0) + 1,
+          expense_counter: counters.expense_counter + 1,
+          invoice_counter: counters.invoice_counter + 1,
         })
         .eq("id", expenseData.project_id);
 
