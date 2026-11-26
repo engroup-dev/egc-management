@@ -10,6 +10,7 @@ import type {
   AgreementItemInput,
   AgreementSummary,
   ContractorProjectMoney,
+  PaymentHistory,
   PaymentMethod,
   PaymentPreview,
   PenaltyRow,
@@ -46,6 +47,7 @@ const keys = {
   project: (uid: string, projectId: string) => ["agreements", uid, "project", projectId] as const,
   detail: (uid: string, id: string) => ["agreements", uid, "detail", id] as const,
   preview: (uid: string, id: string) => ["agreements", uid, "preview", id] as const,
+  paymentHistory: (uid: string, id: string) => ["agreements", uid, "payment-history", id] as const,
   penalties: (uid: string, projectId: string | null) =>
     ["agreements", uid, "penalties", projectId ?? "all"] as const,
   contractorMoney: (uid: string, projectId: string, contractorId: string) =>
@@ -94,6 +96,21 @@ export function usePaymentPreview(agreementId: string | null) {
           .schema("contracts")
           .rpc("agreement_payment_preview", { p_agreement_id: agreementId ?? "" }),
       )) as PaymentPreview | null,
+  });
+}
+
+/** A payment's old versions — each edit made while it was pending. */
+export function usePaymentHistory(paymentId: string | null, enabled = true) {
+  const { userId } = useAuthUserId();
+  return useQuery({
+    queryKey: keys.paymentHistory(userId ?? "", paymentId ?? ""),
+    enabled: enabled && !!userId && !!paymentId,
+    ...TIERS.C,
+    queryFn: async () =>
+      (await rpcOrThrow(
+        "payment_history",
+        agreementsDb.schema("contracts").rpc("payment_history", { p_payment_id: paymentId ?? "" }),
+      )) as PaymentHistory | null,
   });
 }
 

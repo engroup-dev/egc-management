@@ -166,14 +166,22 @@ export function getContractorPaymentsColumns(
       accessorKey: "status",
       header: "الحالة",
       filterFn: "equalsString",
-      cell: ({ getValue }) => {
+      cell: ({ getValue, row }) => {
         const status = getValue<string>();
+        const edits = row.original.edit_count ?? 0;
         return (
-          <span
-            className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${statusColor(status)}`}
-          >
-            {translateStatus(status)}
-          </span>
+          <div className="flex flex-col items-center gap-1">
+            <span
+              className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${statusColor(status)}`}
+            >
+              {translateStatus(status)}
+            </span>
+            {edits > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap bg-amber-50 text-amber-800 border border-amber-200">
+                معدّلة · {edits}
+              </span>
+            )}
+          </div>
         );
       },
     },

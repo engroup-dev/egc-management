@@ -31,6 +31,8 @@ type ExpenseSummary = {
 export interface ContractPayment extends ContractPaymentRow {
   /** Not in the generated row type yet (agreements, 2026-10-21). */
   agreement_id?: string | null;
+  /** Times it was edited while pending, in the field app (2026-11-16). */
+  edit_count?: number;
   /** The agreement it was paid against; null = an old quick payment.
    * total / version are the agreement as it stood when the payment was made. */
   agreement: {

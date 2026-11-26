@@ -92,6 +92,39 @@ export type AgreementPayment = {
   status: PaymentStatus;
   created_by_name: string | null;
   created_at: string;
+  /** How many times it was edited while pending (contract_payment_versions). */
+  edit_count: number;
+  updated_at: string | null;
+};
+
+/** One old version of a payment — the row as it was before an edit. */
+export type PaymentVersion = {
+  version_no: number;
+  amount: number;
+  penalty_amount: number;
+  /** amount − penalty_amount */
+  net: number;
+  penalty_reason: string | null;
+  payments_reason: string | null;
+  method: PaymentMethod;
+  bank_name: string | null;
+  bank_number: string | null;
+  bank_holder_name: string | null;
+  /** Who wrote this version (the creator for version 1). */
+  created_by_name: string | null;
+  created_at: string;
+  /** Why it was replaced, by whom, when. */
+  change_note: string;
+  edited_by_name: string | null;
+  edited_at: string;
+};
+
+/** contracts.payment_history(). Editing happens in the field app. */
+export type PaymentHistory = {
+  edit_count: number;
+  can_edit: boolean;
+  max_amount: number | null;
+  versions: PaymentVersion[];
 };
 
 /** contracts.agreement_detail(). */
@@ -282,6 +315,10 @@ export type AgreementsDatabase = {
       agreement_payment_preview: {
         Args: { p_agreement_id: string };
         Returns: PaymentPreview | null;
+      };
+      payment_history: {
+        Args: { p_payment_id: string };
+        Returns: PaymentHistory | null;
       };
       penalties_list: {
         Args: { p_project_id?: string | null };
