@@ -3,7 +3,6 @@ import { useState } from "react";
 import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { TIERS } from "../../lib/queryClient";
 import { useAuth } from "../useAuth";
-import { ProjectIncomeFormValues } from "../../types/schema/ProjectBook.schema";
 import { supabase } from "../../lib/supabaseClient";
 import { ProjectWithIncome } from "../../types/projects.type";
 
@@ -39,152 +38,6 @@ export function useIncome(projectId: string) {
   const refreshProjectMoney = () => {
     void queryClient.invalidateQueries({ queryKey: ["projects"] });
     void queryClient.invalidateQueries({ queryKey: ["projects-list"] });
-  };
-
-  const addIncome = async (incomeData: ProjectIncomeFormValues) => {
-    try {
-      setMutating(true);
-      setMutationError(null);
-
-      if (!user?.id) {
-        throw new Error("User not authenticated");
-      }
-
-      // get the project for income counter for the serial number
-      const { data: projectRow, error: projectError } = await supabase
-        .from("projects")
-        .select("income_counter")
-        .eq("id", incomeData.project_id)
-        .single();
-
-      if (projectError) {
-        console.error(
-          "Error fetching project for income counter",
-          projectError,
-        );
-        throw projectError;
-      }
-
-      const { data, error } = await supabase
-        .from("project_incomes")
-        .insert({
-          project_id: incomeData.project_id,
-          description: incomeData.description,
-          amount: incomeData.amount,
-          income_date: incomeData.income_date,
-          created_by: user.id,
-          fund: incomeData.fund,
-          payment_method:
-            incomeData.payment_method === "cash" ? "cash" : "bank",
-          serial_number: projectRow?.income_counter || 0,
-          client_name: incomeData.client_name,
-          currency: incomeData.currency,
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.error("Error adding income", error);
-        throw error;
-      }
-
-      // Update local state with new income
-      if (data) {
-        queryClient.setQueryData<ProjectWithIncome>(
-          projectIncomeKey(projectId),
-          (prev) => {
-            if (!prev) return prev;
-            return {
-              ...prev,
-              project_incomes: [...(prev.project_incomes || []), data],
-              income_counter: (prev.income_counter || 0) + 1,
-            };
-          },
-        );
-      }
-
-      // update project income counter
-      const { error: counterError } = await supabase
-        .from("projects")
-        .update({
-          income_counter: (projectRow?.income_counter || 0) + 1,
-          invoice_counter: (projectRow?.income_counter || 0) + 1,
-        })
-        .eq("id", incomeData.project_id);
-
-      if (counterError) {
-        console.error("error updating project income counter", counterError);
-        setMutationError(counterError);
-      }
-
-      //update the account balance and total transactions
-      const { data: accountData, error: accountError } = await supabase
-        .from("accounts")
-        .select("*")
-        .eq("owner_id", incomeData.project_id)
-        .eq("currency", incomeData.currency)
-        .eq("type", incomeData.payment_method === "cash" ? "cash" : "bank")
-        .eq("owner_type", "project")
-        .single();
-
-      if (accountError) {
-        console.error("Error fetching project account", accountError);
-        throw accountError;
-      }
-
-      const { error: accountUpdateError } = await supabase
-        .from("accounts")
-        .update({
-          balance: accountData.balance + incomeData.amount,
-          total_transactions:
-            accountData.total_transactions + incomeData.amount,
-        })
-        .eq("id", accountData.id);
-
-      if (accountUpdateError) {
-        console.error("Error updating project account", accountUpdateError);
-        throw accountUpdateError;
-      }
-
-      // get the project balance and update it
-      const { data: projectData, error: projectBalanceError } = await supabase
-        .from("project_balances")
-        .select("*")
-        .eq("project_id", incomeData.project_id)
-        .eq("currency", incomeData.currency)
-        .single();
-
-      if (projectBalanceError) {
-        console.error("Error fetching project balance", projectBalanceError);
-        throw projectBalanceError;
-      }
-
-      const { error: projectBalanceUpdateError } = await supabase
-        .from("project_balances")
-        .update({
-          balance: projectData.balance + incomeData.amount,
-          total_transactions:
-            projectData.total_transactions + incomeData.amount,
-        })
-        .eq("id", projectData.id);
-
-      if (projectBalanceUpdateError) {
-        console.error(
-          "Error updating project balance",
-          projectBalanceUpdateError,
-        );
-        throw projectBalanceUpdateError;
-      }
-
-      return { data, error: null };
-    } catch (err) {
-      const error = err as PostgrestError;
-      setMutationError(error);
-      return { data: null, error };
-    } finally {
-      setMutating(false);
-      refreshProjectMoney();
-    }
   };
 
   const deleteIncome = async (projectId: string, incomeId: string) => {
@@ -328,7 +181,6 @@ export function useIncome(projectId: string) {
     project: query.data ?? null,
     loading: query.isPending || mutating,
     error: mutationError ?? (query.error as PostgrestError | null),
-    addIncome,
     deleteIncome,
   };
 }
